@@ -1,17 +1,48 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, MessageSquare, CheckSquare, Mail, Settings, CheckCircle2, XCircle } from "lucide-react";
+import { Calendar, MessageSquare, CheckSquare, Mail, Settings, CheckCircle2, XCircle, Clock, AlarmCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
+import { toast } from "sonner";
+
+interface Message {
+  id: string;
+  body: string;
+  created_at: string;
+  parsed_intent: any;
+  dir: string;
+}
+
+interface Reminder {
+  id: string;
+  text: string;
+  due_ts: string;
+  status: string;
+  created_at: string;
+}
+
+interface ActivityLog {
+  id: string;
+  type: string;
+  payload: any;
+  trace_id: string;
+  created_at: string;
+}
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
+  const [recentMessages, setRecentMessages] = useState<Message[]>([]);
+  const [upcomingReminders, setUpcomingReminders] = useState<Reminder[]>([]);
+  const [recentActivities, setRecentActivities] = useState<ActivityLog[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
     checkConnections();
+    fetchDashboardData();
   }, []);
 
   const checkConnections = async () => {
@@ -29,6 +60,81 @@ const Dashboard = () => {
       setIsGoogleConnected(false);
     } finally {
       setIsLoadingConnections(false);
+    }
+  };
+
+  const fetchDashboardData = async () => {
+    try {
+      setIsLoadingData(true);
+
+      // Fetch recent messages
+      const { data: messages, error: msgError } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!msgError && messages) {
+        setRecentMessages(messages);
+      }
+
+      // Fetch upcoming reminders
+      const { data: reminders, error: remError } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('status', 'pending')
+        .gte('due_ts', new Date().toISOString())
+        .order('due_ts', { ascending: true })
+        .limit(5);
+
+      if (!remError && reminders) {
+        setUpcomingReminders(reminders);
+      }
+
+      // Fetch recent activity logs
+      const { data: logs, error: logsError } = await supabase
+        .from('logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!logsError && logs) {
+        setRecentActivities(logs);
+      }
+
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const getIntentIcon = (intent: string) => {
+    switch (intent) {
+      case 'gcal_create_event':
+        return <Calendar className="w-4 h-4" />;
+      case 'reminder_create':
+        return <AlarmCheck className="w-4 h-4" />;
+      case 'gmail_summarize_unread':
+        return <Mail className="w-4 h-4" />;
+      default:
+        return <MessageSquare className="w-4 h-4" />;
+    }
+  };
+
+  const getIntentLabel = (intent: string) => {
+    switch (intent) {
+      case 'gcal_create_event':
+        return 'Calendar Event';
+      case 'reminder_create':
+        return 'Reminder';
+      case 'gmail_summarize_unread':
+        return 'Email Summary';
+      case 'fallback':
+        return 'Message';
+      default:
+        return intent;
     }
   };
 
@@ -97,36 +203,70 @@ const Dashboard = () => {
             </Button>
           </Card>
 
-          {/* Calendar Overview */}
+          {/* Recent Messages */}
           <Card className="p-6 border-accent/20 hover:border-accent/40 transition-all duration-300">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-3 bg-accent/10 rounded-lg">
-                <Calendar className="w-6 h-6 text-accent" />
+                <MessageSquare className="w-6 h-6 text-accent" />
               </div>
-              <h2 className="text-xl font-semibold">Upcoming Events</h2>
+              <h2 className="text-xl font-semibold">Recent Messages</h2>
             </div>
-            <p className="text-muted-foreground text-sm mb-4">
-              Connect your Google Calendar to see upcoming events
-            </p>
-            <div className="text-center py-8 text-muted-foreground">
-              No events to display
-            </div>
+            {isLoadingData ? (
+              <p className="text-muted-foreground text-center py-4">Loading...</p>
+            ) : recentMessages.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {recentMessages.slice(0, 5).map((msg) => (
+                  <div key={msg.id} className="p-3 bg-secondary/50 rounded-lg border border-border">
+                    <div className="flex items-start gap-2">
+                      {msg.parsed_intent?.type && getIntentIcon(msg.parsed_intent.type)}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{msg.body || 'Voice message'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(msg.created_at), 'MMM d, h:mm a')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                No messages yet
+              </div>
+            )}
           </Card>
 
-          {/* Tasks Overview */}
+          {/* Upcoming Reminders */}
           <Card className="p-6 border-success/20 hover:border-success/40 transition-all duration-300">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-3 bg-success/10 rounded-lg">
-                <CheckSquare className="w-6 h-6 text-success" />
+                <AlarmCheck className="w-6 h-6 text-success" />
               </div>
-              <h2 className="text-xl font-semibold">Today's Tasks</h2>
+              <h2 className="text-xl font-semibold">Upcoming Reminders</h2>
             </div>
-            <p className="text-muted-foreground text-sm mb-4">
-              Connect Google Tasks to manage your to-dos
-            </p>
-            <div className="text-center py-8 text-muted-foreground">
-              No tasks to display
-            </div>
+            {isLoadingData ? (
+              <p className="text-muted-foreground text-center py-4">Loading...</p>
+            ) : upcomingReminders.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {upcomingReminders.map((reminder) => (
+                  <div key={reminder.id} className="p-3 bg-success/5 rounded-lg border border-success/20">
+                    <div className="flex items-start gap-2">
+                      <Clock className="w-4 h-4 text-success mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{reminder.text}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(reminder.due_ts), 'MMM d, h:mm a')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                No upcoming reminders
+              </div>
+            )}
           </Card>
         </div>
 
@@ -138,12 +278,42 @@ const Dashboard = () => {
             </div>
             <h2 className="text-xl font-semibold">Recent Activity</h2>
           </div>
-          <div className="text-center py-12 text-muted-foreground">
-            <p className="mb-2">No recent activity</p>
-            <p className="text-sm">
-              Start by connecting your services in settings
-            </p>
-          </div>
+          {isLoadingData ? (
+            <p className="text-muted-foreground text-center py-4">Loading...</p>
+          ) : recentActivities.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {recentActivities.map((activity) => {
+                const intentType = activity.payload?.intent || 'unknown';
+                return (
+                  <div key={activity.id} className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg border border-border hover:bg-secondary/50 transition-colors">
+                    <div className="p-2 bg-primary/10 rounded-md">
+                      {getIntentIcon(intentType)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-sm font-semibold text-primary">
+                          {getIntentLabel(intentType)}
+                        </span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(activity.created_at), 'MMM d, h:mm a')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Trace ID: {activity.trace_id?.substring(0, 8)}...
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="mb-2">No recent activity</p>
+              <p className="text-sm">
+                Start chatting via WhatsApp to see your activity here
+              </p>
+            </div>
+          )}
         </Card>
 
         {/* Quick Actions */}
