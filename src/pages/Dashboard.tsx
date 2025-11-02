@@ -1,10 +1,36 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, MessageSquare, CheckSquare, Mail, Settings } from "lucide-react";
+import { Calendar, MessageSquare, CheckSquare, Mail, Settings, CheckCircle2, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [isLoadingConnections, setIsLoadingConnections] = useState(true);
+
+  useEffect(() => {
+    checkConnections();
+  }, []);
+
+  const checkConnections = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('oauth_tokens')
+        .select('id')
+        .eq('provider', 'google')
+        .limit(1)
+        .maybeSingle();
+      
+      setIsGoogleConnected(!!data && !error);
+    } catch (err) {
+      console.error('Error checking connections:', err);
+      setIsGoogleConnected(false);
+    } finally {
+      setIsLoadingConnections(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
@@ -29,25 +55,45 @@ const Dashboard = () => {
               </div>
               <h2 className="text-xl font-semibold">Connection Status</h2>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">WhatsApp</span>
-                <span className="px-3 py-1 bg-warning/10 text-warning text-sm font-medium rounded-full">
-                  Setup Required
-                </span>
+            {isLoadingConnections ? (
+              <p className="text-muted-foreground text-center py-4">Checking...</p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-2 rounded-lg border border-success/20 bg-success/5">
+                  <span className="text-foreground">WhatsApp (Twilio)</span>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-success" />
+                    <span className="text-success text-sm font-medium">Connected</span>
+                  </div>
+                </div>
+                <div className={`flex items-center justify-between p-2 rounded-lg border ${
+                  isGoogleConnected 
+                    ? 'border-success/20 bg-success/5' 
+                    : 'border-warning/20 bg-warning/5'
+                }`}>
+                  <span className="text-foreground">Google Workspace</span>
+                  <div className="flex items-center gap-1.5">
+                    {isGoogleConnected ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-success" />
+                        <span className="text-success text-sm font-medium">Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-warning" />
+                        <span className="text-warning text-sm font-medium">Not Connected</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Google Workspace</span>
-                <span className="px-3 py-1 bg-warning/10 text-warning text-sm font-medium rounded-full">
-                  Not Connected
-                </span>
-              </div>
-            </div>
+            )}
             <Button 
               className="w-full mt-4"
               onClick={() => navigate('/settings')}
+              variant={isGoogleConnected ? "outline" : "default"}
             >
-              Connect Services
+              {isGoogleConnected ? "Manage Connections" : "Connect Services"}
             </Button>
           </Card>
 

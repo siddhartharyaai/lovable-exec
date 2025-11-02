@@ -249,26 +249,6 @@ const Settings = () => {
           </div>
         </Card>
 
-        {/* Setup Instructions */}
-        <Card className="p-6 border-warning/20 bg-warning/5">
-          <h2 className="text-xl font-semibold mb-4 text-warning">Setup Required</h2>
-          <div className="space-y-3 text-sm">
-            <p className="text-foreground">
-              To complete setup, you need to configure the following secrets in Lovable Cloud:
-            </p>
-            <ul className="list-disc list-inside space-y-2 text-muted-foreground pl-2">
-              <li><code className="px-2 py-1 bg-muted rounded text-xs">GOOGLE_CLIENT_ID</code> - From Google Cloud Console</li>
-              <li><code className="px-2 py-1 bg-muted rounded text-xs">GOOGLE_CLIENT_SECRET</code> - From Google Cloud Console</li>
-              <li><code className="px-2 py-1 bg-muted rounded text-xs">TWILIO_ACCOUNT_SID</code> - From Twilio Console</li>
-              <li><code className="px-2 py-1 bg-muted rounded text-xs">TWILIO_AUTH_TOKEN</code> - From Twilio Console</li>
-              <li><code className="px-2 py-1 bg-muted rounded text-xs">TWILIO_WHATSAPP_NUMBER</code> - Your Twilio WhatsApp number</li>
-              <li><code className="px-2 py-1 bg-muted rounded text-xs">APP_SECRET_KEY</code> - Generate a secure random key</li>
-            </ul>
-            <p className="text-foreground pt-2">
-              See <a href="https://docs.lovable.dev/features/cloud" className="text-primary underline" target="_blank" rel="noopener noreferrer">Lovable Cloud docs</a> for detailed setup instructions.
-            </p>
-          </div>
-        </Card>
       </div>
     </div>
   );
