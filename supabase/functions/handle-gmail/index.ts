@@ -73,9 +73,9 @@ serve(async (req) => {
       if (messages.length === 0) {
         message = '📧 No unread emails. Your inbox is clear!';
       } else {
-        // Fetch details for each message
+        // Fetch details for each message (up to maxResults)
         const messageDetails = await Promise.all(
-          messages.slice(0, 3).map(async (msg: any) => {
+          messages.slice(0, maxResults).map(async (msg: any) => {
             const detailResponse = await fetch(
               `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
               { headers: { 'Authorization': `Bearer ${accessToken}` } }

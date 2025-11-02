@@ -11,7 +11,7 @@ SUPPORTED INTENTS:
 - reminder_create: WhatsApp native reminders
 - gcal_create_event: Create calendar event
 - gcal_read_events: Read calendar events
-- gcal_modify_event: Modify calendar event
+- gcal_update_event: Update/reschedule calendar event (requires eventTitle or eventId, and new start time)
 - gcal_delete_event: Delete calendar event
 - gtask_create_task: Create a task
 - gtask_read_tasks: Read tasks
@@ -48,6 +48,15 @@ Response: {"type":"gcal_read_events","entities":{"date":"2025-11-03T00:00:00+05:
 
 User: "Show me next week's meetings"
 Response: {"type":"gcal_read_events","entities":{"timeMin":"2025-11-03T00:00:00+05:30","timeMax":"2025-11-10T23:59:59+05:30"},"confidence":0.9}
+
+User: "Reschedule weekly sync with rohan to 10:45 am"
+Response: {"type":"gcal_update_event","entities":{"eventTitle":"weekly sync with rohan","start":"2025-11-03T10:45:00+05:30"},"confidence":0.9}
+
+User: "Move my meeting tomorrow to 2pm"
+Response: {"type":"gcal_update_event","entities":{"eventTitle":"meeting","start":"2025-11-03T14:00:00+05:30"},"confidence":0.85}
+
+User: "Change the standup time to 9:30am"
+Response: {"type":"gcal_update_event","entities":{"eventTitle":"standup","start":"2025-11-03T09:30:00+05:30"},"confidence":0.9}
 
 EMAIL:
 User: "What's in my inbox?"

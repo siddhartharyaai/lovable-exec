@@ -240,6 +240,118 @@ serve(async (req) => {
         break;
       }
 
+      case 'update': {
+        const { eventId, title, start, duration, eventTitle } = intent.entities;
+        
+        // If we have eventTitle but no eventId, search for the event
+        let targetEventId = eventId;
+        
+        if (!targetEventId && eventTitle) {
+          console.log(`[${traceId}] Searching for event: ${eventTitle}`);
+          
+          // Search for events in the next 30 days
+          const searchStart = new Date();
+          const searchEnd = new Date();
+          searchEnd.setDate(searchEnd.getDate() + 30);
+          
+          const searchParams = new URLSearchParams({
+            timeMin: searchStart.toISOString(),
+            timeMax: searchEnd.toISOString(),
+            q: eventTitle,
+            singleEvents: 'true',
+          });
+          
+          const searchResponse = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?${searchParams}`,
+            { headers: { 'Authorization': `Bearer ${accessToken}` } }
+          );
+          
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const matchingEvents = searchData.items || [];
+            
+            if (matchingEvents.length > 0) {
+              targetEventId = matchingEvents[0].id;
+              console.log(`[${traceId}] Found event ID: ${targetEventId}`);
+            }
+          }
+        }
+        
+        if (!targetEventId) {
+          message = "I couldn't find that event. Please be more specific about which event to update.";
+          break;
+        }
+        
+        // Fetch the existing event
+        const getResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${targetEventId}`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        
+        if (!getResponse.ok) {
+          message = "I couldn't find that event in your calendar.";
+          break;
+        }
+        
+        const existingEvent = await getResponse.json();
+        
+        // Prepare update payload
+        const updatePayload: any = {
+          summary: title || existingEvent.summary,
+          description: existingEvent.description,
+          attendees: existingEvent.attendees,
+        };
+        
+        // Update start/end time if provided
+        if (start) {
+          const startTime = new Date(start);
+          const endTime = new Date(startTime.getTime() + (duration || 30) * 60000);
+          
+          updatePayload.start = { 
+            dateTime: startTime.toISOString(), 
+            timeZone: intent.tz || 'Asia/Kolkata' 
+          };
+          updatePayload.end = { 
+            dateTime: endTime.toISOString(), 
+            timeZone: intent.tz || 'Asia/Kolkata' 
+          };
+        } else {
+          updatePayload.start = existingEvent.start;
+          updatePayload.end = existingEvent.end;
+        }
+        
+        // Update the event
+        const updateResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${targetEventId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updatePayload),
+          }
+        );
+        
+        if (!updateResponse.ok) {
+          const errorText = await updateResponse.text();
+          console.error(`[${traceId}] Calendar update error:`, errorText);
+          throw new Error('Failed to update calendar event');
+        }
+        
+        const updatedEvent = await updateResponse.json();
+        const displayTime = start 
+          ? new Date(start).toLocaleString('en-IN', { 
+              dateStyle: 'medium', 
+              timeStyle: 'short',
+              timeZone: intent.tz || 'Asia/Kolkata'
+            })
+          : '';
+        
+        message = `✅ Updated: **${updatePayload.summary}**${displayTime ? ' to ' + displayTime : ''}`;
+        break;
+      }
+
       default:
         message = 'Calendar action not yet implemented';
     }

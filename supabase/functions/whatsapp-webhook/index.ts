@@ -169,6 +169,18 @@ serve(async (req) => {
           replyText = readResult.data?.message || '📅 Here are your events...';
         }
         break;
+      
+      case 'gcal_update_event':
+        const updateResult = await supabase.functions.invoke('handle-calendar', {
+          body: { intent, userId, traceId, action: 'update' }
+        });
+        if (updateResult.error) {
+          replyText = '⚠️ ' + (updateResult.data?.message || 'Failed to update calendar event. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Calendar update error:`, updateResult.error);
+        } else {
+          replyText = updateResult.data?.message || '📅 Event updated!';
+        }
+        break;
         
       case 'gmail_summarize_unread':
       case 'gmail_mark_read':
