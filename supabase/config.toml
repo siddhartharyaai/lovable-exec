@@ -80,5 +80,17 @@ verify_jwt = false
 [functions.handle-gmail]
 verify_jwt = false
 
+[functions.handle-tasks]
+verify_jwt = false
+
+[functions.handle-image]
+verify_jwt = false
+
+[functions.handle-search]
+verify_jwt = false
+
+[functions.daily-briefing]
+verify_jwt = false
+
 [functions.check-due-reminders]
 verify_jwt = false

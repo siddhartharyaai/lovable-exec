@@ -352,6 +352,79 @@ serve(async (req) => {
         break;
       }
 
+      case 'delete': {
+        const { eventId, eventTitle } = intent.entities;
+        
+        // If we have eventTitle but no eventId, search for the event
+        let targetEventId = eventId;
+        
+        if (!targetEventId && eventTitle) {
+          console.log(`[${traceId}] Searching for event to delete: ${eventTitle}`);
+          
+          // Search for events in the next 30 days
+          const searchStart = new Date();
+          const searchEnd = new Date();
+          searchEnd.setDate(searchEnd.getDate() + 30);
+          
+          const searchParams = new URLSearchParams({
+            timeMin: searchStart.toISOString(),
+            timeMax: searchEnd.toISOString(),
+            q: eventTitle,
+            singleEvents: 'true',
+          });
+          
+          const searchResponse = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?${searchParams}`,
+            { headers: { 'Authorization': `Bearer ${accessToken}` } }
+          );
+          
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const matchingEvents = searchData.items || [];
+            
+            if (matchingEvents.length > 0) {
+              targetEventId = matchingEvents[0].id;
+              console.log(`[${traceId}] Found event ID to delete: ${targetEventId}`);
+            }
+          }
+        }
+        
+        if (!targetEventId) {
+          message = "I couldn't find that event. Please be more specific about which event to delete.";
+          break;
+        }
+        
+        // Fetch the event details before deleting (for confirmation message)
+        const getResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${targetEventId}`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+        
+        let eventName = eventTitle || 'event';
+        if (getResponse.ok) {
+          const eventData = await getResponse.json();
+          eventName = eventData.summary || eventName;
+        }
+        
+        // Delete the event
+        const deleteResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${targetEventId}`,
+          {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          }
+        );
+        
+        if (!deleteResponse.ok) {
+          const errorText = await deleteResponse.text();
+          console.error(`[${traceId}] Calendar delete error:`, errorText);
+          throw new Error('Failed to delete calendar event');
+        }
+        
+        message = `🗑️ Deleted: **${eventName}**`;
+        break;
+      }
+
       default:
         message = 'Calendar action not yet implemented';
     }

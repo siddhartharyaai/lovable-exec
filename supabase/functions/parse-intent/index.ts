@@ -13,14 +13,14 @@ SUPPORTED INTENTS:
 - gcal_read_events: Read calendar events
 - gcal_update_event: Update/reschedule calendar event (requires eventTitle or eventId, and new start time)
 - gcal_delete_event: Delete calendar event
-- gtask_create_task: Create a task
+- gtask_create_task: Create a task (entities: title, notes optional, due optional)
 - gtask_read_tasks: Read tasks
 - gmail_summarize_unread: Summarize unread emails (Primary tab only)
 - gmail_mark_read: Mark emails as read (entities: messageIds array, or "all" for all unread)
 - gmail_send: Send an email (requires: to, subject, body - will show draft for approval)
 - gmail_reply: Reply to an email (requires: messageId, body - will show draft for approval)
-- web_search: Search the web
-- image_generation: Generate an image
+- web_search: Search the web (entities: query, type optional: "general" or "specific")
+- image_generation: Generate an image (entities: prompt)
 - fallback: General conversation
 
 ENTITY NORMALIZATION:
@@ -58,6 +58,12 @@ Response: {"type":"gcal_update_event","entities":{"eventTitle":"meeting","start"
 User: "Change the standup time to 9:30am"
 Response: {"type":"gcal_update_event","entities":{"eventTitle":"standup","start":"2025-11-03T09:30:00+05:30"},"confidence":0.9}
 
+User: "Delete my meeting with John"
+Response: {"type":"gcal_delete_event","entities":{"eventTitle":"meeting with John"},"confidence":0.9}
+
+User: "Cancel tomorrow's standup"
+Response: {"type":"gcal_delete_event","entities":{"eventTitle":"standup"},"confidence":0.9}
+
 EMAIL:
 User: "What's in my inbox?"
 Response: {"type":"gmail_summarize_unread","entities":{"max":20},"confidence":0.95}
@@ -79,6 +85,33 @@ Response: {"type":"gmail_mark_read","entities":{"scope":"all"},"confidence":0.9}
 
 User: "Send email to john@example.com about meeting tomorrow"
 Response: {"type":"gmail_send","entities":{"to":"john@example.com","subject":"Meeting Tomorrow","body":"Hi John, Let's discuss the meeting details for tomorrow."},"confidence":0.9}
+
+TASKS:
+User: "Add buy groceries to my task list"
+Response: {"type":"gtask_create_task","entities":{"title":"Buy groceries"},"confidence":0.95}
+
+User: "Create task: finish report by Friday"
+Response: {"type":"gtask_create_task","entities":{"title":"Finish report","due":"2025-11-07T23:59:59+05:30"},"confidence":0.9}
+
+User: "What tasks do I have?"
+Response: {"type":"gtask_read_tasks","entities":{},"confidence":0.95}
+
+User: "Show me my to-do list"
+Response: {"type":"gtask_read_tasks","entities":{},"confidence":0.95}
+
+SEARCH:
+User: "Search for best restaurants in Mumbai"
+Response: {"type":"web_search","entities":{"query":"best restaurants in Mumbai","type":"general"},"confidence":0.95}
+
+User: "Find detailed information about climate change effects"
+Response: {"type":"web_search","entities":{"query":"climate change effects","type":"specific"},"confidence":0.9}
+
+IMAGE:
+User: "Generate an image of a sunset over mountains"
+Response: {"type":"image_generation","entities":{"prompt":"sunset over mountains"},"confidence":0.95}
+
+User: "Create a picture of a futuristic city"
+Response: {"type":"image_generation","entities":{"prompt":"futuristic city"},"confidence":0.95}
 
 FALLBACK:
 User: "How are you?"

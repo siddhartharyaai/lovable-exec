@@ -181,6 +181,18 @@ serve(async (req) => {
           replyText = updateResult.data?.message || '📅 Event updated!';
         }
         break;
+      
+      case 'gcal_delete_event':
+        const deleteResult = await supabase.functions.invoke('handle-calendar', {
+          body: { intent, userId, traceId, action: 'delete' }
+        });
+        if (deleteResult.error) {
+          replyText = '⚠️ ' + (deleteResult.data?.message || 'Failed to delete calendar event. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Calendar delete error:`, deleteResult.error);
+        } else {
+          replyText = deleteResult.data?.message || '🗑️ Event deleted!';
+        }
+        break;
         
       case 'gmail_summarize_unread':
       case 'gmail_mark_read':
@@ -194,6 +206,55 @@ serve(async (req) => {
           console.error(`[${traceId}] Gmail error:`, gmailResult.error);
         } else {
           replyText = gmailResult.data?.message || '📧 Email action completed!';
+        }
+        break;
+        
+      case 'gtask_create_task':
+        const createTaskResult = await supabase.functions.invoke('handle-tasks', {
+          body: { intent, userId, traceId, action: 'create' }
+        });
+        if (createTaskResult.error) {
+          replyText = '⚠️ ' + (createTaskResult.data?.message || 'Failed to create task. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Task create error:`, createTaskResult.error);
+        } else {
+          replyText = createTaskResult.data?.message || '✅ Task created!';
+        }
+        break;
+        
+      case 'gtask_read_tasks':
+        const readTaskResult = await supabase.functions.invoke('handle-tasks', {
+          body: { intent, userId, traceId, action: 'read' }
+        });
+        if (readTaskResult.error) {
+          replyText = '⚠️ ' + (readTaskResult.data?.message || 'Failed to read tasks. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Task read error:`, readTaskResult.error);
+        } else {
+          replyText = readTaskResult.data?.message || '📋 Here are your tasks...';
+        }
+        break;
+        
+      case 'web_search':
+        const searchResult = await supabase.functions.invoke('handle-search', {
+          body: { intent, traceId }
+        });
+        if (searchResult.error) {
+          replyText = '⚠️ Failed to search. Please try again.';
+          console.error(`[${traceId}] Search error:`, searchResult.error);
+        } else {
+          replyText = searchResult.data?.message || '🔍 Search completed!';
+        }
+        break;
+        
+      case 'image_generation':
+        const imageResult = await supabase.functions.invoke('handle-image', {
+          body: { intent, traceId }
+        });
+        if (imageResult.error) {
+          replyText = '⚠️ Failed to generate image. Please try again.';
+          console.error(`[${traceId}] Image generation error:`, imageResult.error);
+        } else {
+          replyText = imageResult.data?.message || '🎨 Image generated!';
+          // TODO: Send image via WhatsApp if imageUrl is present
         }
         break;
         
