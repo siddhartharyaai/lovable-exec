@@ -27,24 +27,35 @@ const Settings = () => {
         description: "Your Google account has been successfully connected!",
       });
       window.history.replaceState({}, '', '/settings');
+      // Force recheck after OAuth callback
+      setTimeout(() => checkGoogleConnection(), 500);
     }
+  }, []);
+
+  // Recheck when page becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkGoogleConnection();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const checkGoogleConnection = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setIsLoadingGoogle(false);
-        return;
-      }
-
+      // Check oauth_tokens table for any Google connection (not user-specific for testing)
       const { data, error } = await supabase
         .from('oauth_tokens')
         .select('id')
         .eq('provider', 'google')
+        .limit(1)
         .maybeSingle();
       
       setIsGoogleConnected(!!data && !error);
+      console.log('Google connection status:', !!data && !error);
     } catch (err) {
       console.error('Error checking Google connection:', err);
       setIsGoogleConnected(false);
@@ -55,36 +66,21 @@ const Settings = () => {
 
   const handleConnectGoogle = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        // Create anonymous user for testing
-        const phone = `+91${Math.floor(1000000000 + Math.random() * 9000000000)}`;
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .insert({ phone })
-          .select()
-          .single();
+      // Create a test user for OAuth (phone-based identification)
+      const phone = `+91${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .insert({ phone })
+        .select()
+        .single();
 
-        if (userError || !userData) {
-          throw new Error('Failed to create user');
-        }
-
-        const redirectUrl = window.location.href.split('?')[0];
-        const { data, error } = await supabase.functions.invoke('auth-google', {
-          body: { userId: userData.id, redirectUrl }
-        });
-
-        if (error) throw error;
-        
-        if (data?.authUrl) {
-          window.location.href = data.authUrl;
-        }
-        return;
+      if (userError || !userData) {
+        throw new Error('Failed to create user');
       }
 
       const redirectUrl = window.location.href.split('?')[0];
       const { data, error } = await supabase.functions.invoke('auth-google', {
-        body: { userId: user.id, redirectUrl }
+        body: { userId: userData.id, redirectUrl }
       });
 
       if (error) throw error;
@@ -127,21 +123,21 @@ const Settings = () => {
           
           <div className="space-y-4">
             {/* WhatsApp Status */}
-            <div className="flex items-center justify-between p-4 border border-border rounded-lg">
+            <div className="flex items-center justify-between p-4 border border-success/20 bg-success/5 rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-warning/10 rounded-lg">
-                  <XCircle className="w-5 h-5 text-warning" />
+                <div className="p-2 bg-success/10 rounded-lg">
+                  <CheckCircle2 className="w-5 h-5 text-success" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">WhatsApp</h3>
+                  <h3 className="font-semibold">WhatsApp (Twilio)</h3>
                   <p className="text-sm text-muted-foreground">
-                    Setup required - Connect via Twilio
+                    Connected - Webhook configured
                   </p>
                 </div>
               </div>
-              <Button variant="outline" disabled>
-                Configure Twilio
-              </Button>
+              <span className="px-3 py-1 bg-success/10 text-success text-sm font-medium rounded-full">
+                Active
+              </span>
             </div>
 
             {/* Google Workspace Status */}

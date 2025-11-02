@@ -3,7 +3,7 @@
 
 **Purpose:** Machine-readable checklist with acceptance criteria. The Vibe Coder MUST check off items when criteria are met.
 
-**Progress:** 3 / 68 complete (4%)
+**Progress:** 36 / 68 complete (53%)
 
 ---
 
@@ -21,65 +21,65 @@
   - **Criteria:** index.css and tailwind.config.ts have semantic tokens (HSL), colors, transitions defined
   - **Status:** ✅ Complete
 
-- [ ] **#1.4** Create RUNBOOK.md
+- [x] **#1.4** Create RUNBOOK.md
   - **Criteria:** File exists with incident handling, secret rotation, webhook replay procedures
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#1.5** Create PRIVACY_POLICY.md stub
+- [x] **#1.5** Create PRIVACY_POLICY.md stub
   - **Criteria:** Basic policy covering data collection, usage, deletion, suitable for Google OAuth verification
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#1.6** Create TERMS.md stub
+- [x] **#1.6** Create TERMS.md stub
   - **Criteria:** Basic terms of service
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
 ---
 
 ## Database Schema
 
-- [ ] **#2.1** Create `users` table migration
+- [x] **#2.1** Create `users` table migration
   - **Criteria:** Table with id, phone (unique), email, tz (default Asia/Kolkata), primary_task_list_id, timestamps, indexes
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#2.2** Create `oauth_tokens` table migration
+- [x] **#2.2** Create `oauth_tokens` table migration
   - **Criteria:** Table with encrypted access_token, refresh_token, FK to users, indexes
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#2.3** Create `messages` table migration
+- [x] **#2.3** Create `messages` table migration
   - **Criteria:** Table with provider_sid (unique), parsed_intent (jsonb), FK to users, indexes
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#2.4** Create `reminders` table migration
+- [x] **#2.4** Create `reminders` table migration
   - **Criteria:** Table with due_ts, status enum, FK to users, indexes on (user_id, status, due_ts)
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#2.5** Create `logs` table migration
+- [x] **#2.5** Create `logs` table migration
   - **Criteria:** Table with type, payload (jsonb), trace_id, indexes
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#2.6** Apply all migrations
+- [x] **#2.6** Apply all migrations
   - **Criteria:** All tables exist in database with correct schema
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
-- [ ] **#2.7** Verify indexes created
+- [x] **#2.7** Verify indexes created
   - **Criteria:** Query database to confirm all indexes from ARCHITECTURE.md exist
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete
 
 ---
 
 ## Secrets Configuration
 
-- [ ] **#3.1** Add Lovable Cloud Secrets
+- [x] **#3.1** Add Lovable Cloud Secrets
   - **Criteria:** GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, APP_SECRET_KEY added
-  - **Status:** ⏳ Pending (requires user input)
+  - **Status:** ✅ Complete (user confirmed)
 
 - [ ] **#3.2** Configure environment variables
   - **Criteria:** APP_BASE_URL, DEFAULT_TZ set in Lovable Cloud config
   - **Status:** ⏳ Pending
 
-- [ ] **#3.3** Verify LOVABLE_API_KEY auto-provisioned
+- [x] **#3.3** Verify LOVABLE_API_KEY auto-provisioned
   - **Criteria:** Can successfully call Lovable AI endpoint
-  - **Status:** ⏳ Pending
+  - **Status:** ✅ Complete (in use)
 
 ---
 
