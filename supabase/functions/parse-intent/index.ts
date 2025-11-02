@@ -73,9 +73,15 @@ Response: {"type":"gmail_send","entities":{"to":"john@example.com","subject":"Me
 
 FALLBACK:
 User: "How are you?"
-Response: {"type":"fallback","entities":{},"confidence":1.0,"response":"I'm doing great! I'm here to help you with reminders, calendar, emails, and tasks. What can I do for you?"}
+Response: {"type":"fallback","entities":{},"confidence":1.0}
 
-Return ONLY valid JSON with: type, entities, confidence (0-1), and optional response for fallback.`;
+User: "What's the capital of India?"
+Response: {"type":"fallback","entities":{},"confidence":1.0}
+
+User: "Give me a recipe for strawberry cheesecake"
+Response: {"type":"fallback","entities":{},"confidence":1.0}
+
+Return ONLY valid JSON with: type, entities, confidence (0-1). For fallback intents, do NOT include a response field - the system will use AI to answer.`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -137,8 +143,7 @@ serve(async (req) => {
       intent = {
         type: 'fallback',
         entities: {},
-        confidence: 0.5,
-        response: "I understood your message, but I'm not quite sure how to help. Can you try rephrasing?"
+        confidence: 0.5
       };
     }
 
@@ -158,7 +163,6 @@ serve(async (req) => {
       type: 'fallback',
       entities: {},
       confidence: 0.1,
-      response: 'Sorry, I encountered an error. Please try again.',
       error: errorMessage
     }), {
       status: 200,

@@ -171,20 +171,55 @@ serve(async (req) => {
         break;
         
       case 'gmail_summarize_unread':
+      case 'gmail_mark_read':
+      case 'gmail_send':
+      case 'gmail_reply':
         const gmailResult = await supabase.functions.invoke('handle-gmail', {
           body: { intent, userId, traceId }
         });
         if (gmailResult.error) {
-          replyText = '⚠️ ' + (gmailResult.data?.message || 'Failed to summarize emails. Make sure your Google account is connected.');
+          replyText = '⚠️ ' + (gmailResult.data?.message || 'Failed to process email request. Make sure your Google account is connected.');
           console.error(`[${traceId}] Gmail error:`, gmailResult.error);
         } else {
-          replyText = gmailResult.data?.message || '📧 Email summary ready!';
+          replyText = gmailResult.data?.message || '📧 Email action completed!';
         }
         break;
         
       case 'fallback':
       default:
-        replyText = intent?.response || "I'm here to help! Try asking me to set a reminder, check your calendar, or summarize your emails.";
+        // Use AI to answer general knowledge questions
+        console.log(`[${traceId}] Fallback - using AI for general response`);
+        const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+        try {
+          const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${lovableApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash',
+              messages: [
+                { 
+                  role: 'system', 
+                  content: 'You are a helpful AI assistant. Answer questions naturally and conversationally. For questions you can answer, provide helpful information. If asked about capabilities, mention you can help with reminders, calendar events, and email management via WhatsApp. Keep responses concise and friendly.' 
+                },
+                { role: 'user', content: messageBody }
+              ],
+              temperature: 0.7,
+            }),
+          });
+
+          if (aiResponse.ok) {
+            const aiData = await aiResponse.json();
+            replyText = aiData.choices[0].message.content;
+          } else {
+            replyText = "I'm here to help! I can set reminders, manage your calendar, and handle emails. What would you like me to do?";
+          }
+        } catch (aiError) {
+          console.error(`[${traceId}] AI error:`, aiError);
+          replyText = "I'm here to help! I can set reminders, manage your calendar, and handle emails. What would you like me to do?";
+        }
         break;
     }
 
