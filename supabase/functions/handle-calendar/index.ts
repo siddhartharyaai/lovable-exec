@@ -106,6 +106,7 @@ serve(async (req) => {
 
         // If a specific date is provided, use that
         if (date) {
+          console.log(`[${traceId}] Using date from intent:`, date);
           startTime = new Date(date);
           startTime.setHours(0, 0, 0, 0);
           endTime = new Date(date);
@@ -121,6 +122,8 @@ serve(async (req) => {
           endTime = new Date();
           endTime.setHours(23, 59, 59, 999);
         }
+
+        console.log(`[${traceId}] Fetching events from ${startTime.toISOString()} to ${endTime.toISOString()}`);
 
         const params = new URLSearchParams({
           timeMin: startTime.toISOString(),
@@ -144,19 +147,31 @@ serve(async (req) => {
         const data = await response.json();
         const events = data.items || [];
 
+        console.log(`[${traceId}] Found ${events.length} events`);
+
         if (events.length === 0) {
           message = '📅 No events found for the requested time period.';
         } else {
           message = `📅 **Your Events:**\n\n`;
           events.forEach((event: any, i: number) => {
             const start = new Date(event.start.dateTime || event.start.date);
+            console.log(`[${traceId}] Event ${i+1} start:`, event.start.dateTime || event.start.date);
+            
             const timeStr = event.start.dateTime 
-              ? start.toLocaleString('en-IN', { 
-                  dateStyle: 'short', 
-                  timeStyle: 'short',
+              ? start.toLocaleString('en-GB', { 
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
                   timeZone: intent.tz || 'Asia/Kolkata'
                 })
-              : start.toLocaleDateString('en-IN');
+              : start.toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit'
+                });
             
             message += `${i + 1}. **${event.summary}**\n   ${timeStr}\n`;
             if (event.attendees?.length) {
