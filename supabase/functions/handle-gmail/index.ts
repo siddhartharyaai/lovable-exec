@@ -102,22 +102,25 @@ serve(async (req) => {
             messages: [
               { 
                 role: 'system', 
-                content: `You are a proactive email assistant. Analyze emails and provide:
-1. A concise summary (1-2 sentences per email) of what each email is about
-2. Actionable insights - what the user should do
-3. Urgency indicators - what needs immediate attention
-4. Offer to help - suggest actions like "Would you like me to mark any as read?"
+                content: `You are an email assistant. For each email, provide:
+- Line 1: Key point/action needed (one sentence)
+- Line 2: Context/urgency if relevant (one short sentence)
 
-CRITICAL: Keep total response under 1200 characters (WhatsApp limit).
-Use emojis for better readability. Be conversational and helpful.` 
+Format each email as:
+📧 **From:** [sender name/company]
+[2-line summary with actionable insight]
+
+After all emails, offer help in ONE line: "Reply 'mark read' to clear these."
+
+CRITICAL: Maximum 2 lines per email. Keep total under 1000 characters.` 
               },
               { 
                 role: 'user', 
-                content: `I have ${messages.length} unread emails in my Primary inbox. Here are the top 3:\n\n${emailList}\n\nProvide a brief, actionable summary under 1200 characters. Ask if I'd like to take any actions.` 
+                content: `Summarize these ${messages.length} primary inbox emails:\n\n${emailList}\n\nProvide 2-line summaries with key actions needed.` 
               }
             ],
-            temperature: 0.7,
-            max_tokens: 400,
+            temperature: 0.5,
+            max_tokens: 350,
           }),
         });
 
