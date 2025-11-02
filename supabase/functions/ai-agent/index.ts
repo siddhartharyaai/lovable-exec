@@ -630,9 +630,9 @@ serve(async (req) => {
   }
 
   try {
-    const { message, userId, conversationHistory, traceId } = await req.json();
+    const { message, userId, conversationHistory, traceId, forcedIntent, routedIntent, isConversational } = await req.json();
     
-    console.log(`[${traceId}] AI Agent processing: "${message.substring(0, 100)}..."`);
+    console.log(`[${traceId}] AI Agent processing: "${message.substring(0, 100)}..."${forcedIntent ? ' [FORCED INTENT]' : ''}${routedIntent ? ' [ROUTED INTENT]' : ''}`);
 
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -642,38 +642,80 @@ serve(async (req) => {
     // Build dynamic system prompt with learned patterns
     const systemPrompt = await buildSystemPrompt(supabase, userId);
 
-    // Build conversation context
-    const messages = [
+    // Initialize messages array for conversation context
+    let messages: any[] = [
       { role: 'system', content: systemPrompt },
       ...(conversationHistory || []).slice(-10), // Keep last 10 messages for context
-      { role: 'user', content: message }
     ];
 
-    // First AI call - let it decide which tools to use
-    const initialResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: messages,
-        tools: TOOLS,
-        temperature: 0.7,
-      }),
-    });
+    // Always add the current user message to maintain conversation context
+    messages.push({ role: 'user', content: message });
 
-    if (!initialResponse.ok) {
-      const errorText = await initialResponse.text();
-      console.error(`[${traceId}] AI Gateway error:`, errorText);
-      throw new Error('AI Gateway error');
+    let aiMessage: any;
+
+    // If forcedIntent is provided (from confirmation), skip AI and execute directly
+    if (forcedIntent) {
+      console.log(`[${traceId}] Using forced intent:`, JSON.stringify(forcedIntent));
+      
+      // Map the forced intent action to tool name
+      const actionToTool: Record<string, string> = {
+        'delete_calendar_event': 'delete_calendar_event',
+        'delete_task': 'delete_task',
+        'mark_all_emails_read': 'mark_all_emails_read'
+      };
+      
+      const toolName = actionToTool[forcedIntent.action];
+      if (toolName) {
+        // Create a synthetic tool call with the stored parameters
+        aiMessage = {
+          tool_calls: [{
+            id: `call_forced_${Date.now()}`,
+            type: 'function',
+            function: {
+              name: toolName,
+              arguments: JSON.stringify(forcedIntent.params)
+            }
+          }]
+        };
+      } else {
+        throw new Error(`Unknown forced action: ${forcedIntent.action}`);
+      }
+    } else {
+      // If routedIntent is provided, add it as context before the user message
+      if (routedIntent) {
+        // Insert routing context before the user message (which is already added)
+        messages.splice(messages.length - 1, 0, {
+          role: 'system',
+          content: `CONTEXT: The routing layer has identified this intent: ${JSON.stringify(routedIntent)}. Use these extracted slots: ${JSON.stringify(routedIntent.slots)}`
+        });
+      }
+
+      // First AI call - let it decide which tools to use
+      const initialResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: messages,
+          tools: isConversational ? undefined : TOOLS, // Skip tools for conversational responses
+          temperature: 0.7,
+        }),
+      });
+
+      if (!initialResponse.ok) {
+        const errorText = await initialResponse.text();
+        console.error(`[${traceId}] AI Gateway error:`, errorText);
+        throw new Error('AI Gateway error');
+      }
+
+      const aiData = await initialResponse.json();
+      aiMessage = aiData.choices[0].message;
+
+      console.log(`[${traceId}] AI decision:`, JSON.stringify(aiMessage, null, 2));
     }
-
-    const aiData = await initialResponse.json();
-    const aiMessage = aiData.choices[0].message;
-
-    console.log(`[${traceId}] AI decision:`, JSON.stringify(aiMessage, null, 2));
 
     // Safety check: Force web search for queries about live/current information
     const requiresSearch = !aiMessage.tool_calls && (
