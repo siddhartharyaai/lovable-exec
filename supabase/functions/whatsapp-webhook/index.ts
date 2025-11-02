@@ -101,22 +101,7 @@ serve(async (req) => {
       }
     }
 
-    // Store incoming message
-    const { error: msgError } = await supabase
-      .from('messages')
-      .insert({
-        user_id: userId,
-        dir: 'in',
-        body: messageBody,
-        media_url: mediaUrl,
-        provider_sid: providerSid,
-      });
-
-    if (msgError) {
-      console.error(`[${traceId}] Message insert error:`, msgError);
-    }
-
-    // Parse intent
+    // Parse intent first
     console.log(`[${traceId}] Parsing intent...`);
     const intentResult = await supabase.functions.invoke('parse-intent', {
       body: { 
@@ -129,6 +114,22 @@ serve(async (req) => {
     const intent = intentResult.data;
     console.log(`[${traceId}] Intent:`, intent?.type);
 
+    // Store incoming message with parsed intent
+    const { error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        user_id: userId,
+        dir: 'in',
+        body: messageBody,
+        media_url: mediaUrl,
+        provider_sid: providerSid,
+        parsed_intent: intent,
+      });
+
+    if (msgError) {
+      console.error(`[${traceId}] Message insert error:`, msgError);
+    }
+
     // Route to handler based on intent
     let replyText = '';
     
@@ -137,28 +138,48 @@ serve(async (req) => {
         const reminderResult = await supabase.functions.invoke('handle-reminder', {
           body: { intent, userId, traceId }
         });
-        replyText = reminderResult.data?.message || '⏰ Reminder set!';
+        if (reminderResult.error) {
+          replyText = '⚠️ Failed to create reminder. Please try again.';
+          console.error(`[${traceId}] Reminder error:`, reminderResult.error);
+        } else {
+          replyText = reminderResult.data?.message || '⏰ Reminder set!';
+        }
         break;
         
       case 'gcal_create_event':
         const calResult = await supabase.functions.invoke('handle-calendar', {
           body: { intent, userId, traceId, action: 'create' }
         });
-        replyText = calResult.data?.message || '📅 Event created!';
+        if (calResult.error) {
+          replyText = '⚠️ ' + (calResult.data?.message || 'Failed to create calendar event. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Calendar error:`, calResult.error);
+        } else {
+          replyText = calResult.data?.message || '📅 Event created!';
+        }
         break;
         
       case 'gcal_read_events':
         const readResult = await supabase.functions.invoke('handle-calendar', {
           body: { intent, userId, traceId, action: 'read' }
         });
-        replyText = readResult.data?.message || '📅 Here are your events...';
+        if (readResult.error) {
+          replyText = '⚠️ ' + (readResult.data?.message || 'Failed to read calendar events. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Calendar read error:`, readResult.error);
+        } else {
+          replyText = readResult.data?.message || '📅 Here are your events...';
+        }
         break;
         
       case 'gmail_summarize_unread':
         const gmailResult = await supabase.functions.invoke('handle-gmail', {
           body: { intent, userId, traceId }
         });
-        replyText = gmailResult.data?.message || '📧 Email summary ready!';
+        if (gmailResult.error) {
+          replyText = '⚠️ ' + (gmailResult.data?.message || 'Failed to summarize emails. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Gmail error:`, gmailResult.error);
+        } else {
+          replyText = gmailResult.data?.message || '📧 Email summary ready!';
+        }
         break;
         
       case 'fallback':
