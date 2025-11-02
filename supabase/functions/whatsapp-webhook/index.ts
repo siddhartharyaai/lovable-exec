@@ -244,17 +244,52 @@ serve(async (req) => {
           replyText = searchResult.data?.message || '🔍 Search completed!';
         }
         break;
-        
-      case 'image_generation':
-        const imageResult = await supabase.functions.invoke('handle-image', {
-          body: { intent, traceId }
+      
+      case 'reminder_snooze':
+        const snoozeResult = await supabase.functions.invoke('handle-reminder', {
+          body: { intent, userId, traceId, action: 'snooze' }
         });
-        if (imageResult.error) {
-          replyText = '⚠️ Failed to generate image. Please try again.';
-          console.error(`[${traceId}] Image generation error:`, imageResult.error);
+        if (snoozeResult.error) {
+          replyText = '⚠️ Failed to snooze reminder. Please try again.';
+          console.error(`[${traceId}] Snooze error:`, snoozeResult.error);
         } else {
-          replyText = imageResult.data?.message || '🎨 Image generated!';
-          // TODO: Send image via WhatsApp if imageUrl is present
+          replyText = snoozeResult.data?.message || '⏰ Reminder snoozed!';
+        }
+        break;
+      
+      case 'gtask_complete_task':
+        const completeTaskResult = await supabase.functions.invoke('handle-tasks', {
+          body: { intent, userId, traceId, action: 'complete' }
+        });
+        if (completeTaskResult.error) {
+          replyText = '⚠️ ' + (completeTaskResult.data?.message || 'Failed to complete task. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Task complete error:`, completeTaskResult.error);
+        } else {
+          replyText = completeTaskResult.data?.message || '✅ Task completed!';
+        }
+        break;
+      
+      case 'gcal_read_events_by_person':
+        const readByPersonResult = await supabase.functions.invoke('handle-calendar', {
+          body: { intent, userId, traceId, action: 'read_by_person' }
+        });
+        if (readByPersonResult.error) {
+          replyText = '⚠️ ' + (readByPersonResult.data?.message || 'Failed to read calendar events. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Calendar read by person error:`, readByPersonResult.error);
+        } else {
+          replyText = readByPersonResult.data?.message || '📅 Here are your events...';
+        }
+        break;
+      
+      case 'contact_lookup':
+        const contactResult = await supabase.functions.invoke('handle-contacts', {
+          body: { intent, userId, traceId }
+        });
+        if (contactResult.error) {
+          replyText = '⚠️ ' + (contactResult.data?.message || 'Failed to find contact. Make sure your Google account is connected.');
+          console.error(`[${traceId}] Contact lookup error:`, contactResult.error);
+        } else {
+          replyText = contactResult.data?.message || '👤 Contact found!';
         }
         break;
         

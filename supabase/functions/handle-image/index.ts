@@ -1,3 +1,7 @@
+// ⚠️ DEPRECATED: Image generation feature has been removed from the product.
+// This file is kept for reference only and should not be used.
+// Last updated: 2025-11-02
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {

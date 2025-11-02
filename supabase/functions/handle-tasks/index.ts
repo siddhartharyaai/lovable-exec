@@ -103,6 +103,93 @@ serve(async (req) => {
         message += ` (due ${dueDate})`;
       }
 
+    } else if (action === 'complete') {
+      const { taskTitle, taskId } = intent.entities;
+      
+      // Get all task lists
+      const listResponse = await fetch(
+        'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!listResponse.ok) {
+        throw new Error('Failed to fetch task lists');
+      }
+
+      const listData = await listResponse.json();
+      const lists = listData.items || [];
+
+      // Search for the task across all lists
+      let targetTask: any = null;
+      let targetList: string = '';
+
+      if (taskId) {
+        // If taskId provided, search for it
+        for (const list of lists) {
+          const tasksResponse = await fetch(
+            `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks/${taskId}`,
+            {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            }
+          );
+          if (tasksResponse.ok) {
+            targetTask = await tasksResponse.json();
+            targetList = list.id;
+            break;
+          }
+        }
+      } else if (taskTitle) {
+        // Search by title
+        for (const list of lists) {
+          const tasksResponse = await fetch(
+            `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks`,
+            {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            }
+          );
+          const tasksData = await tasksResponse.json();
+          const tasks = tasksData.items || [];
+          
+          const match = tasks.find((t: any) => 
+            t.title.toLowerCase().includes(taskTitle.toLowerCase())
+          );
+          
+          if (match) {
+            targetTask = match;
+            targetList = list.id;
+            break;
+          }
+        }
+      }
+
+      if (!targetTask || !targetList) {
+        message = `❌ Task "${taskTitle || taskId}" not found.`;
+      } else {
+        // Mark task as completed
+        const updateResponse = await fetch(
+          `https://tasks.googleapis.com/tasks/v1/lists/${targetList}/tasks/${targetTask.id}`,
+          {
+            method: 'PATCH',
+            headers: { 
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              status: 'completed',
+              completed: new Date().toISOString()
+            }),
+          }
+        );
+
+        if (!updateResponse.ok) {
+          throw new Error('Failed to complete task');
+        }
+
+        message = `✅ Task completed: "${targetTask.title}"`;
+      }
+
     } else if (action === 'read') {
       // Get all task lists
       const listResponse = await fetch(

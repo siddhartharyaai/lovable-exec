@@ -171,20 +171,25 @@ Create a conversational AI assistant that:
 - ✅ Privacy controls (export, delete)
 
 ### P1 (High Priority Post-MVP)
-- Email draft generation and sending (with confirmation)
-- Web search via Google
-- Contact lookup and enrichment
-- Reminder snooze and reschedule
-- Task completion and updates
-- Calendar event modification and deletion
+- ✅ Email draft generation and sending (with confirmation)
+- ✅ Web search (SERP API for general, Firecrawl for specific)
+- ✅ Contact lookup via Google People API
+- ✅ Reminder snooze functionality
+- ✅ Task completion
+- ✅ Calendar event modification and deletion
+- ✅ Calendar events by person/attendee
+- ✅ News, weather, and current affairs queries
 
 ### P2 (Nice-to-Have)
-- Image generation for presentations
 - Multi-user delegation
 - Team coordination features
 - Slack mirroring
 - Voice reply synthesis
 - Smart task priority suggestions
+- Recurring events and reminders
+
+### Removed Features
+- ❌ Image generation (removed from scope - 2025-11-02)
 
 ---
 

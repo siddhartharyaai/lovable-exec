@@ -352,6 +352,98 @@ serve(async (req) => {
         break;
       }
 
+      case 'read_by_person': {
+        const { attendee_name, timeMin, timeMax } = intent.entities;
+        
+        if (!attendee_name) {
+          message = "Please specify whose meetings to show (e.g., 'Show meetings with Priya')";
+          break;
+        }
+
+        let startTime: string;
+        let endTime: string;
+
+        if (timeMin && timeMax) {
+          startTime = timeMin;
+          endTime = timeMax;
+        } else {
+          // Default to this week
+          const now = new Date();
+          const weekStart = new Date(now);
+          weekStart.setDate(now.getDate() - now.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 7);
+          
+          startTime = weekStart.toISOString();
+          endTime = weekEnd.toISOString();
+        }
+
+        console.log(`[${traceId}] Fetching events with ${attendee_name} from ${startTime} to ${endTime}`);
+
+        const params = new URLSearchParams({
+          timeMin: new Date(startTime).toISOString(),
+          timeMax: new Date(endTime).toISOString(),
+          q: attendee_name,
+          singleEvents: 'true',
+          orderBy: 'startTime',
+        });
+
+        const response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch calendar events');
+        }
+
+        const data = await response.json();
+        const events = (data.items || []).filter((event: any) => {
+          if (!event.attendees) return false;
+          return event.attendees.some((att: any) => 
+            att.email?.toLowerCase().includes(attendee_name.toLowerCase()) ||
+            att.displayName?.toLowerCase().includes(attendee_name.toLowerCase())
+          );
+        });
+
+        console.log(`[${traceId}] Found ${events.length} events with ${attendee_name}`);
+
+        if (events.length === 0) {
+          message = `📅 No meetings found with **${attendee_name}** in the specified time period.`;
+        } else {
+          message = `📅 **Meetings with ${attendee_name}** (${events.length} found)\n\n`;
+          events.forEach((event: any, i: number) => {
+            const start = new Date(event.start.dateTime || event.start.date);
+            const timeStr = event.start.dateTime 
+              ? start.toLocaleString('en-GB', { 
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                  timeZone: intent.tz || 'Asia/Kolkata'
+                })
+              : start.toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit'
+                });
+            
+            message += `${i + 1}. **${event.summary}**\n   ${timeStr}\n`;
+            if (event.attendees?.length) {
+              message += `   👥 ${event.attendees.length} attendee(s)\n`;
+            }
+            message += '\n';
+          });
+        }
+        break;
+      }
+
       case 'delete': {
         const { eventId, eventTitle } = intent.entities;
         
