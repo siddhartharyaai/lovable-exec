@@ -101,33 +101,43 @@ serve(async (req) => {
       case 'read': {
         const { timeMin, timeMax, maxResults, date } = intent.entities;
         
-        let startTime: Date;
-        let endTime: Date;
+        let startTime: string;
+        let endTime: string;
 
         // If a specific date is provided, use that
         if (date) {
           console.log(`[${traceId}] Using date from intent:`, date);
-          startTime = new Date(date);
-          startTime.setHours(0, 0, 0, 0);
-          endTime = new Date(date);
-          endTime.setHours(23, 59, 59, 999);
+          
+          // Extract the date part from ISO string (e.g., "2025-11-03T00:00:00+05:30" -> "2025-11-03")
+          const dateMatch = date.match(/^(\d{4}-\d{2}-\d{2})/);
+          if (dateMatch) {
+            const datePart = dateMatch[1];
+            // Construct start and end of day in IST timezone
+            startTime = `${datePart}T00:00:00+05:30`;
+            endTime = `${datePart}T23:59:59+05:30`;
+          } else {
+            throw new Error('Invalid date format');
+          }
         } else if (timeMin && timeMax) {
           // Use explicit time range if provided
-          startTime = new Date(timeMin);
-          endTime = new Date(timeMax);
+          startTime = timeMin;
+          endTime = timeMax;
         } else {
-          // Default to today's events
-          startTime = new Date();
-          startTime.setHours(0, 0, 0, 0);
-          endTime = new Date();
-          endTime.setHours(23, 59, 59, 999);
+          // Default to today's events in IST
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const datePart = `${year}-${month}-${day}`;
+          startTime = `${datePart}T00:00:00+05:30`;
+          endTime = `${datePart}T23:59:59+05:30`;
         }
 
-        console.log(`[${traceId}] Fetching events from ${startTime.toISOString()} to ${endTime.toISOString()}`);
+        console.log(`[${traceId}] Fetching events from ${startTime} to ${endTime}`);
 
         const params = new URLSearchParams({
-          timeMin: startTime.toISOString(),
-          timeMax: endTime.toISOString(),
+          timeMin: new Date(startTime).toISOString(),
+          timeMax: new Date(endTime).toISOString(),
           maxResults: String(maxResults || 10),
           orderBy: 'startTime',
           singleEvents: 'true',
