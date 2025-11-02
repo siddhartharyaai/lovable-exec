@@ -258,11 +258,11 @@ serve(async (req) => {
           
           if (date) {
             // If date is provided, search that specific day
-            searchStart = new Date(date);
-            searchStart.setHours(0, 0, 0, 0);
-            searchEnd = new Date(date);
-            searchEnd.setHours(23, 59, 59, 999);
-            console.log(`[${traceId}] Searching events on ${searchStart.toDateString()}`);
+            // Extract just the date part if it's a full ISO string
+            const dateStr = date.includes('T') ? date.split('T')[0] : date;
+            searchStart = new Date(dateStr + 'T00:00:00+05:30'); // Start of day in IST
+            searchEnd = new Date(dateStr + 'T23:59:59+05:30');   // End of day in IST
+            console.log(`[${traceId}] Searching events on ${dateStr} (${searchStart.toISOString()} to ${searchEnd.toISOString()})`);
           } else {
             // Search next 30 days
             searchStart = new Date();
@@ -562,11 +562,11 @@ serve(async (req) => {
           
           if (date) {
             // If date is provided, search that specific day
-            searchStart = new Date(date);
-            searchStart.setHours(0, 0, 0, 0);
-            searchEnd = new Date(date);
-            searchEnd.setHours(23, 59, 59, 999);
-            console.log(`[${traceId}] Searching events on ${searchStart.toDateString()}`);
+            // Extract just the date part if it's a full ISO string
+            const dateStr = date.includes('T') ? date.split('T')[0] : date;
+            searchStart = new Date(dateStr + 'T00:00:00+05:30'); // Start of day in IST
+            searchEnd = new Date(dateStr + 'T23:59:59+05:30');   // End of day in IST
+            console.log(`[${traceId}] Searching events on ${dateStr} (${searchStart.toISOString()} to ${searchEnd.toISOString()})`);
           } else {
             // Search next 30 days
             searchStart = new Date();
