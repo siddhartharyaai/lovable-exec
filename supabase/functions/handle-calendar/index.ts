@@ -277,12 +277,8 @@ serve(async (req) => {
             orderBy: 'startTime',
           });
           
-          // Use person for Google Calendar search if available, otherwise use title
-          if (person) {
-            searchParams.append('q', person);
-          } else if (eventTitle) {
-            searchParams.append('q', eventTitle);
-          }
+          // Don't use q parameter - get all events and filter locally
+          console.log(`[${traceId}] Google Calendar API search params:`, searchParams.toString());
           
           const searchResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?${searchParams}`,
@@ -294,6 +290,7 @@ serve(async (req) => {
             let candidates = searchData.items || [];
             
             console.log(`[${traceId}] Initial Google search found ${candidates.length} events`);
+            console.log(`[${traceId}] Event summaries:`, candidates.map((e: any) => e.summary).join(', '));
             
             // CRITICAL: Filter by person first if specified
             if (person) {
@@ -547,7 +544,8 @@ serve(async (req) => {
       case 'delete': {
         const { eventId, eventTitle, date, person } = intent.entities;
         
-        console.log(`[${traceId}] Delete request - eventId: ${eventId}, title: "${eventTitle}", person: "${person}", date: ${date}`);
+        console.log(`[${traceId}] Delete request - eventId: ${eventId}, title: "${eventTitle}", person: "${person}", date: ${date}, dateType: ${typeof date}`);
+        console.log(`[${traceId}] Full intent.entities:`, JSON.stringify(intent.entities));
         
         // If we have eventTitle but no eventId, search for the event intelligently
         let targetEventId = eventId;
@@ -581,12 +579,8 @@ serve(async (req) => {
             orderBy: 'startTime',
           });
           
-          // Use person for Google Calendar search if available, otherwise use title
-          if (person) {
-            searchParams.append('q', person);
-          } else if (eventTitle) {
-            searchParams.append('q', eventTitle);
-          }
+          // Don't use q parameter - it's unreliable. Get all events and filter locally.
+          console.log(`[${traceId}] Google Calendar API search params:`, searchParams.toString());
           
           const searchResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?${searchParams}`,
@@ -598,6 +592,7 @@ serve(async (req) => {
             let candidates = searchData.items || [];
             
             console.log(`[${traceId}] Initial Google search found ${candidates.length} events`);
+            console.log(`[${traceId}] Event summaries:`, candidates.map((e: any) => e.summary).join(', '));
             
             // CRITICAL: Filter by person first if specified
             if (person) {

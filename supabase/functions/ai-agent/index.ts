@@ -839,6 +839,7 @@ serve(async (req) => {
               break;
 
             case 'delete_calendar_event':
+              console.log(`[${traceId}] delete_calendar_event tool args:`, JSON.stringify(args));
               const deleteCalResult = await supabase.functions.invoke('handle-calendar', {
                 body: { 
                   intent: { 
@@ -854,6 +855,7 @@ serve(async (req) => {
                   action: 'delete'
                 }
               });
+              console.log(`[${traceId}] delete_calendar_event result:`, deleteCalResult.data?.message);
               result = deleteCalResult.data?.message || 'Event deleted';
               break;
 

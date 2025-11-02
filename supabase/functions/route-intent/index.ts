@@ -87,94 +87,32 @@ const INTENT_SCHEMAS: Record<string, any> = {
   }
 };
 
-const ROUTER_SYSTEM_PROMPT = `You are a fast intent classifier for an executive assistant. Analyze the user's message and output JSON with this exact structure:
+const ROUTER_SYSTEM_PROMPT = `You are a fast intent classifier for an executive assistant. Your job is to analyze the user's message and extract structured information about their intent.
 
-{
-  "decision": "ASK|ACT|ANSWER",
-  "confidence": 0.0-1.0,
-  "primary_intent": {
-    "intent": "intent_name",
-    "slots": {"slot_name": "extracted_value"},
-    "confidence": 0.0-1.0
-  },
-  "secondary_intent": {
-    "intent": "intent_name",
-    "slots": {"slot_name": "extracted_value"},
-    "confidence": 0.0-1.0
-  },
-  "missing_critical_slots": ["slot1", "slot2"],
-  "clarify_question": "one pointed question",
-  "clarify_options": ["option1", "option2"]
-}
-
-DECISION RULES:
-- ASK: If critical slots are missing OR confidence < 0.75 OR gap between primary and secondary < 0.15
-- ACT: If all critical slots present AND confidence > 0.75 AND clear winner
-- ANSWER: If conversational (greetings, thanks, questions about capabilities)
-
-SLOT EXTRACTION DISCIPLINE:
-- ALWAYS extract person, date, time as SEPARATE fields
-- person: Just the name (e.g., "Rohan", NOT "appointment with Rohan")
-- date: Normalized (e.g., "tomorrow" → calculate date, "next week" → date range)
-- duration: Number in minutes (e.g., "30", "45")
-- event_title: ONLY if user mentions specific title (NOT generic words like "appointment", "meeting", "call")
+CRITICAL SLOT EXTRACTION RULES:
+1. Person names: Extract ONLY the name (e.g., "Rohan" NOT "meeting with Rohan" or "appointment with Rohan")
+2. Dates: Convert relative dates to ISO format (e.g., "tomorrow" → "2025-11-03", "next week" → "2025-11-09")
+3. Event titles: ONLY extract if user specifies a SPECIFIC title. Do NOT use generic words like "meeting", "appointment", "call", "sync"
+4. For calendar operations with a person: If user says "meeting with X" or "appointment with X", extract person="X" and leave event_title empty
 
 INTENT DETECTION:
-- schedule_meeting: "set meeting", "schedule call", "book time with"
-- delete_calendar_event: "delete meeting", "cancel appointment", "remove event"
-- update_calendar_event: "move meeting", "reschedule", "change time"
-- email_search: "find email", "search inbox", "show emails from"
-- email_draft: "send email", "draft email", "write to"
-- task_create: "add task", "create todo", "remind me to"
-- task_complete: "mark done", "complete task", "finish"
-- task_delete: "delete task", "remove todo"
-- web_search: "search for", "what is", "find information about"
+- delete_calendar_event: "delete", "cancel", "remove" + any mention of calendar/meeting/appointment
+- schedule_meeting: "schedule", "set", "book" + meeting/call/time
+- update_calendar_event: "move", "reschedule", "change time"
+- email_search: "find email", "search inbox"
+- email_draft: "send email", "draft email"
+- task_create: "add task", "create todo"
+- task_complete: "mark done", "complete task"
+- task_delete: "delete task"
+- web_search: "search for", "what is", "find information"
 - reminder_create: "remind me", "set reminder"
 
-EXAMPLES:
+DECISION LOGIC:
+- ACT: All critical slots present (for delete_calendar_event: person OR event_title, plus date)
+- ASK: Missing critical slots OR confidence < 0.75
+- ANSWER: Conversational (greetings, thanks, questions)
 
-User: "Delete the appointment with Rohan tomorrow"
-Output: {
-  "decision": "ACT",
-  "confidence": 0.92,
-  "primary_intent": {
-    "intent": "delete_calendar_event",
-    "slots": {"person": "Rohan", "date": "2025-11-03"},
-    "confidence": 0.92
-  },
-  "secondary_intent": null,
-  "missing_critical_slots": [],
-  "clarify_question": null,
-  "clarify_options": null
-}
-
-User: "Set meeting with Rohan next week"
-Output: {
-  "decision": "ASK",
-  "confidence": 0.85,
-  "primary_intent": {
-    "intent": "schedule_meeting",
-    "slots": {"person": "Rohan", "date": "next_week"},
-    "confidence": 0.85
-  },
-  "secondary_intent": null,
-  "missing_critical_slots": ["duration"],
-  "clarify_question": "30 or 45 minutes?",
-  "clarify_options": ["30", "45"]
-}
-
-User: "Thanks, that helps!"
-Output: {
-  "decision": "ANSWER",
-  "confidence": 0.98,
-  "primary_intent": null,
-  "secondary_intent": null,
-  "missing_critical_slots": [],
-  "clarify_question": null,
-  "clarify_options": null
-}
-
-Be precise and fast. Output ONLY valid JSON.`;
+Current date/time: ${new Date().toISOString().split('T')[0]} (for relative date calculations)`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -212,7 +150,53 @@ serve(async (req) => {
       });
     }
 
-    // Call Lovable AI for routing
+    // Define tool for structured output
+    const routingTool = {
+      type: "function",
+      function: {
+        name: "classify_intent",
+        description: "Classify user intent and extract slots",
+        parameters: {
+          type: "object",
+          properties: {
+            decision: {
+              type: "string",
+              enum: ["ASK", "ACT", "ANSWER"],
+              description: "ASK if slots missing, ACT if ready, ANSWER if conversational"
+            },
+            confidence: {
+              type: "number",
+              description: "Confidence score 0.0-1.0"
+            },
+            intent: {
+              type: "string",
+              description: "Intent name (delete_calendar_event, schedule_meeting, etc.)"
+            },
+            slots: {
+              type: "object",
+              description: "Extracted slot values (person, date, event_title, etc.)"
+            },
+            missing_critical_slots: {
+              type: "array",
+              items: { type: "string" },
+              description: "List of missing required slots"
+            },
+            clarify_question: {
+              type: "string",
+              description: "Question to ask user if slots missing"
+            },
+            clarify_options: {
+              type: "array",
+              items: { type: "string" },
+              description: "Options for user to choose from"
+            }
+          },
+          required: ["decision", "confidence"]
+        }
+      }
+    };
+
+    // Call Lovable AI for routing with tool calling
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -222,6 +206,8 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages,
+        tools: [routingTool],
+        tool_choice: { type: "function", function: { name: "classify_intent" } },
         temperature: 0.3,
       }),
     });
@@ -232,12 +218,30 @@ serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    let content = aiData.choices[0].message.content;
+    const toolCall = aiData.choices[0].message.tool_calls?.[0];
     
-    // Strip markdown code fences if present
-    content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+    if (!toolCall || !toolCall.function.arguments) {
+      throw new Error('No tool call returned from AI');
+    }
+
+    const classificationResult = JSON.parse(toolCall.function.arguments);
     
-    const routingResult = JSON.parse(content);
+    console.log(`[${traceId}] Classification result:`, JSON.stringify(classificationResult, null, 2));
+
+    // Build routing result
+    const routingResult: any = {
+      decision: classificationResult.decision,
+      confidence: classificationResult.confidence,
+      primary_intent: classificationResult.intent ? {
+        intent: classificationResult.intent,
+        slots: classificationResult.slots || {},
+        confidence: classificationResult.confidence
+      } : null,
+      secondary_intent: null,
+      missing_critical_slots: classificationResult.missing_critical_slots || [],
+      clarify_question: classificationResult.clarify_question || null,
+      clarify_options: classificationResult.clarify_options || null
+    };
 
     console.log(`[${traceId}] Routing result:`, JSON.stringify(routingResult, null, 2));
 
@@ -252,7 +256,25 @@ serve(async (req) => {
           (slot: string) => !routingResult.primary_intent.slots[slot]
         );
 
-        if (missingSlots.length > 0) {
+        // Special validation for delete_calendar_event: needs date AND (person OR event_title)
+        if (intent === 'delete_calendar_event') {
+          const hasDate = routingResult.primary_intent.slots.date;
+          const hasPerson = routingResult.primary_intent.slots.person;
+          const hasTitle = routingResult.primary_intent.slots.event_title;
+          
+          if (!hasDate) {
+            missingSlots.push('date');
+          }
+          if (!hasPerson && !hasTitle) {
+            // Need at least one identifier
+            routingResult.decision = 'ASK';
+            routingResult.missing_critical_slots = ['person_or_title'];
+            routingResult.clarify_question = "I need more details to find the event. Who is it with, or what's the event title?";
+            routingResult.clarify_options = [];
+          }
+        }
+
+        if (missingSlots.length > 0 && intent !== 'delete_calendar_event') {
           // Override to ASK
           routingResult.decision = 'ASK';
           routingResult.missing_critical_slots = missingSlots;
