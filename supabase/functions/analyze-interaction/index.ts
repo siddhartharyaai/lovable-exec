@@ -37,31 +37,109 @@ serve(async (req) => {
       .limit(5);
 
     // Use AI to reflect on the interaction
-    const reflectionPrompt = `You are a meta-AI that analyzes AI assistant interactions to identify patterns and areas for improvement.
+    const reflectionPrompt = `You are a meta-AI that analyzes AI assistant interactions to improve future performance. Your role is to identify what worked, what didn't, and provide actionable insights.
 
-INTERACTION ANALYSIS:
-User Message: "${userMessage}"
-AI Response: "${aiResponse}"
-Tools Used: ${toolsUsed.join(', ') || 'none'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 CURRENT INTERACTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-RECENT HISTORY:
+**User Message:** "${userMessage}"
+**AI Response:** "${aiResponse}"
+**Tools Used:** ${toolsUsed.join(', ') || 'none'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📈 RECENT INTERACTION HISTORY (Last 5)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ${(recentInteractions || []).map((i: any, idx: number) => 
   `${idx + 1}. User: "${i.user_message}" - Score: ${i.success_score || 'unknown'} ${i.failure_reason ? `(Failed: ${i.failure_reason})` : ''}`
-).join('\n')}
+).join('\n') || 'No recent history'}
 
-ANALYSIS TASKS:
-1. Score the interaction success (1-5): Did the AI likely fulfill the user's intent?
-2. Identify any potential issues or failures
-3. Detect patterns in user preferences or communication style
-4. Suggest specific prompt improvements if needed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 ANALYSIS TASKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Respond in JSON format:
+1. **SUCCESS SCORE (1-5):**
+   - 5: Perfect - AI fully understood intent, used correct tools, response was accurate and helpful
+   - 4: Good - Minor issues but user likely satisfied
+   - 3: Acceptable - Partially met intent, could be better
+   - 2: Poor - Significant issues, wrong tools or incomplete response
+   - 1: Failed - Completely missed user intent or provided wrong information
+
+2. **FAILURE DETECTION:**
+   - Did AI use the wrong tool for the task?
+   - Did AI miss using a tool when it should have?
+   - Was the response unclear or unhelpful?
+   - Did AI hallucinate information instead of using search?
+   - Did AI fail to understand user's natural language?
+   - Common failures:
+     * Using fallback when search_web was needed for current info
+     * Not using lookup_contact before adding attendees to calendar
+     * Missing multi-action requests (e.g., "check calendar AND email")
+     * Poor time parsing (e.g., "tomorrow" → wrong date)
+     * Not asking for confirmation on destructive actions
+
+3. **PATTERN DETECTION:**
+   - Communication style preferences (formal vs casual, brief vs detailed)
+   - Common request types (e.g., frequently asks about specific person's meetings)
+   - Time preferences (e.g., prefers morning meetings, specific task categories)
+   - Tool usage patterns (e.g., always wants email summary with calendar)
+
+4. **USER PREFERENCES:**
+   - Extract concrete preferences like:
+     * preferred_meeting_times: "morning" or "afternoon"
+     * email_summary_length: "brief" or "detailed"
+     * reminder_advance: "30 minutes" or "1 hour"
+     * response_style: "casual" or "formal"
+   - Only record strong signals, not assumptions
+
+5. **PROMPT IMPROVEMENTS:**
+   - If score < 4, suggest a SPECIFIC rule to add to system prompt
+   - Format: "When user asks about X, always do Y"
+   - Focus on repeatab patterns, not one-off issues
+   - Examples:
+     * "When user asks about sports scores or match results, ALWAYS use search_web tool first, never answer from memory"
+     * "When creating calendar events with a person's name, ALWAYS use lookup_contact first to get their email"
+     * "When user mentions 'tomorrow', always clarify morning (9 AM) vs evening (7 PM) if not specified"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 OUTPUT FORMAT (JSON ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Respond with ONLY valid JSON:
 {
   "success_score": 1-5,
-  "failure_reason": "string or null",
+  "failure_reason": "specific reason if score < 4, or null",
   "detected_patterns": ["pattern1", "pattern2"],
-  "user_preferences": {"preference_type": "value"},
-  "prompt_improvements": "specific rule to add to system prompt or null"
+  "user_preferences": {
+    "preference_type": "preference_value"
+  },
+  "prompt_improvements": "specific rule to add OR null"
+}
+
+Example outputs:
+
+**Successful interaction:**
+{
+  "success_score": 5,
+  "failure_reason": null,
+  "detected_patterns": ["User prefers brief responses", "Frequently checks calendar in the morning"],
+  "user_preferences": {
+    "response_style": "brief",
+    "daily_routine": "morning_calendar_check"
+  },
+  "prompt_improvements": null
+}
+
+**Failed interaction (used wrong tool):**
+{
+  "success_score": 2,
+  "failure_reason": "AI tried to answer sports score from memory instead of using search_web tool for current information",
+  "detected_patterns": ["User asks about live sports frequently"],
+  "user_preferences": {
+    "interest_topics": "sports"
+  },
+  "prompt_improvements": "When user asks about live sports scores, match results, or current game status, ALWAYS use search_web tool with specific query including sport, teams, and date. Never answer from memory or training data."
 }`;
 
     const reflectionResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {

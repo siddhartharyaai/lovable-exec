@@ -7,17 +7,24 @@ const corsHeaders = {
 };
 
 // Tool definitions for the AI agent
+// These tools represent the user's personal executive assistant capabilities
 const TOOLS = [
   {
     type: "function",
     function: {
       name: "create_reminder",
-      description: "Create a reminder for the user at a specific time. Use this when user asks to remind them of something.",
+      description: "Create a WhatsApp native reminder that will be sent at a specific time. Use when user says 'remind me', 'don't forget', 'alert me', etc. Perfect for one-time notifications.",
       parameters: {
         type: "object",
         properties: {
-          text: { type: "string", description: "What to remind the user about" },
-          due_time: { type: "string", description: "When to send the reminder in ISO 8601 format (Asia/Kolkata timezone)" }
+          text: { 
+            type: "string", 
+            description: "What to remind the user about. Keep it concise and actionable (e.g., 'call mom', 'take medicine', 'meeting prep')" 
+          },
+          due_time: { 
+            type: "string", 
+            description: "When to send the reminder in ISO 8601 format with Asia/Kolkata timezone (YYYY-MM-DDTHH:mm:ss+05:30). Parse natural language carefully: 'tomorrow 7pm' = next day 19:00 IST, 'in 2 hours' = current time + 2 hours" 
+          }
         },
         required: ["text", "due_time"]
       }
@@ -27,11 +34,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "snooze_reminder",
-      description: "Snooze the most recent active reminder by a specified duration",
+      description: "Snooze the most recent active reminder by a specified duration. Use when user says 'snooze', 'remind me later', 'ask me in X minutes/hours'.",
       parameters: {
         type: "object",
         properties: {
-          duration_minutes: { type: "number", description: "How many minutes to snooze (30 for 30 min, 60 for 1 hour, 1440 for 1 day)" }
+          duration_minutes: { 
+            type: "number", 
+            description: "How many minutes to snooze. Common values: 30 (30 min), 60 (1 hour), 120 (2 hours), 1440 (1 day)" 
+          }
         },
         required: ["duration_minutes"]
       }
@@ -41,12 +51,18 @@ const TOOLS = [
     type: "function",
     function: {
       name: "read_calendar",
-      description: "Read calendar events for a specific date or date range. Use this when user asks about their schedule, meetings, or calendar.",
+      description: "Read calendar events for a specific date or date range from Google Calendar. Use when user asks 'what's on my calendar', 'do I have meetings', 'am I free', 'what's my schedule'. This is for VIEWING events.",
       parameters: {
         type: "object",
         properties: {
-          start_date: { type: "string", description: "Start date in ISO 8601 format" },
-          end_date: { type: "string", description: "End date in ISO 8601 format (optional, defaults to same as start_date)" }
+          start_date: { 
+            type: "string", 
+            description: "Start date in ISO 8601 format (YYYY-MM-DDTHH:mm:ss+05:30). For 'today' use current date at 00:00, for 'tomorrow' use next day at 00:00" 
+          },
+          end_date: { 
+            type: "string", 
+            description: "End date in ISO 8601 format. Optional - if not provided, defaults to same as start_date. For 'this week' use current date to 7 days ahead" 
+          }
         },
         required: ["start_date"]
       }
@@ -56,14 +72,27 @@ const TOOLS = [
     type: "function",
     function: {
       name: "create_calendar_event",
-      description: "Create a new calendar event. Use when user wants to schedule a meeting or block time.",
+      description: "Create a new calendar event in Google Calendar. Use when user wants to 'schedule', 'block time', 'set up a meeting', 'add to calendar'. Perfect for booking time slots.",
       parameters: {
         type: "object",
         properties: {
-          title: { type: "string", description: "Event title" },
-          start_time: { type: "string", description: "Start time in ISO 8601 format" },
-          duration_minutes: { type: "number", description: "Duration in minutes (default 30)" },
-          attendees: { type: "array", items: { type: "string" }, description: "Email addresses of attendees" }
+          title: { 
+            type: "string", 
+            description: "Event title. Make it clear and descriptive (e.g., 'Team Standup', 'Client Call with Acme Corp', 'Gym Session')" 
+          },
+          start_time: { 
+            type: "string", 
+            description: "Event start time in ISO 8601 format (YYYY-MM-DDTHH:mm:ss+05:30). Parse carefully: 'tomorrow morning' = next day 09:00, 'tomorrow evening' = next day 19:00" 
+          },
+          duration_minutes: { 
+            type: "number", 
+            description: "Duration in minutes. Default 30 if not specified. Common values: 15, 30, 60, 90, 120" 
+          },
+          attendees: { 
+            type: "array", 
+            items: { type: "string" }, 
+            description: "Array of email addresses of attendees. If user mentions a person by name, you may need to use lookup_contact first to get their email" 
+          }
         },
         required: ["title", "start_time"]
       }
@@ -73,12 +102,18 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_calendar_event",
-      description: "Update or reschedule an existing calendar event",
+      description: "Update or reschedule an existing calendar event. Use when user says 'reschedule', 'move', 'change time', 'push back'. IMPORTANT: This modifies existing events, so confirm the event title carefully.",
       parameters: {
         type: "object",
         properties: {
-          event_title: { type: "string", description: "Title or partial title of event to update" },
-          new_start_time: { type: "string", description: "New start time in ISO 8601 format" }
+          event_title: { 
+            type: "string", 
+            description: "Title or partial title of the event to update. Be flexible with matching (e.g., 'standup' matches 'Daily Standup')" 
+          },
+          new_start_time: { 
+            type: "string", 
+            description: "New start time in ISO 8601 format (YYYY-MM-DDTHH:mm:ss+05:30)" 
+          }
         },
         required: ["event_title", "new_start_time"]
       }
@@ -88,11 +123,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "delete_calendar_event",
-      description: "Delete a calendar event",
+      description: "Delete a calendar event permanently. Use when user says 'cancel', 'delete', 'remove event'. IMPORTANT: This is destructive, so confirm the event title carefully before executing.",
       parameters: {
         type: "object",
         properties: {
-          event_title: { type: "string", description: "Title or partial title of event to delete" }
+          event_title: { 
+            type: "string", 
+            description: "Title or partial title of the event to delete. Be flexible with matching" 
+          }
         },
         required: ["event_title"]
       }
@@ -102,13 +140,22 @@ const TOOLS = [
     type: "function",
     function: {
       name: "read_calendar_by_person",
-      description: "Find all calendar events with a specific person",
+      description: "Find all calendar events with a specific person (by name or email). Use when user asks 'when am I meeting with X', 'what meetings do I have with Y', 'show me all events with Z'.",
       parameters: {
         type: "object",
         properties: {
-          person_name: { type: "string", description: "Name or email of the person" },
-          start_date: { type: "string", description: "Start date for search (defaults to this week)" },
-          end_date: { type: "string", description: "End date for search" }
+          person_name: { 
+            type: "string", 
+            description: "Name or email of the person to search for in event attendees" 
+          },
+          start_date: { 
+            type: "string", 
+            description: "Start date for search in ISO 8601 format. Defaults to current week if not specified" 
+          },
+          end_date: { 
+            type: "string", 
+            description: "End date for search in ISO 8601 format. Optional" 
+          }
         },
         required: ["person_name"]
       }
@@ -118,11 +165,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "summarize_emails",
-      description: "Get a summary of unread emails. Use when user asks about their inbox or new emails.",
+      description: "Get an AI-powered summary of unread emails from Gmail Primary inbox. Use when user asks 'check my email', 'what's in my inbox', 'any new emails', 'email summary'. Focuses on the most important messages.",
       parameters: {
         type: "object",
         properties: {
-          max_count: { type: "number", description: "Maximum number of emails to summarize (default 10)" }
+          max_count: { 
+            type: "number", 
+            description: "Maximum number of emails to summarize (default 10, max 20). Use lower numbers for quick checks, higher for comprehensive reviews" 
+          }
         }
       }
     }
@@ -131,13 +181,22 @@ const TOOLS = [
     type: "function",
     function: {
       name: "search_emails",
-      description: "Search for emails by sender name or email address, with optional time filtering. Use when user asks to find specific emails from someone.",
+      description: "Search for specific emails by sender name or email address, with optional time filtering. Use when user asks to 'find emails from X', 'show me messages from Y', 'pull up email from Z'. Can search both read and unread emails.",
       parameters: {
         type: "object",
         properties: {
-          sender_name: { type: "string", description: "Name or email of the sender to search for" },
-          days_back: { type: "number", description: "How many days back to search (optional, e.g., 2 for 'last 2 days')" },
-          max_results: { type: "number", description: "Maximum number of emails to return (default 5)" }
+          sender_name: { 
+            type: "string", 
+            description: "Name or email of the sender to search for. Can be partial match (e.g., 'Renu' will match 'Renu Choudhary' or emails containing 'renu')" 
+          },
+          days_back: { 
+            type: "number", 
+            description: "How many days back to search. Optional. Examples: 2 for 'last 2 days', 7 for 'last week', 30 for 'last month'" 
+          },
+          max_results: { 
+            type: "number", 
+            description: "Maximum number of emails to return (default 5, max 10)" 
+          }
         },
         required: ["sender_name"]
       }
@@ -147,11 +206,15 @@ const TOOLS = [
     type: "function",
     function: {
       name: "mark_emails_read",
-      description: "Mark all unread emails as read",
+      description: "Mark all unread emails as read (archive/clean inbox). Use when user says 'mark all as read', 'clear my inbox', 'clean up email'. IMPORTANT: This affects all unread emails, so confirm before executing.",
       parameters: {
         type: "object",
         properties: {
-          scope: { type: "string", enum: ["all"], description: "Mark all emails as read" }
+          scope: { 
+            type: "string", 
+            enum: ["all"], 
+            description: "Currently only supports 'all' to mark all unread emails as read" 
+          }
         },
         required: ["scope"]
       }
@@ -161,14 +224,26 @@ const TOOLS = [
     type: "function",
     function: {
       name: "create_email_draft",
-      description: "Create an email draft for approval before sending. Use when user wants to send or reply to an email.",
+      description: "Create an email draft for user approval before sending. Use when user wants to 'send email', 'reply to', 'draft a message'. IMPORTANT: Always create draft first for confirmation, never send directly.",
       parameters: {
         type: "object",
         properties: {
-          to: { type: "string", description: "Recipient email address" },
-          subject: { type: "string", description: "Email subject" },
-          body: { type: "string", description: "Email body content" },
-          reply_to_message_id: { type: "string", description: "Message ID if this is a reply" }
+          to: { 
+            type: "string", 
+            description: "Recipient email address. If user mentions a person by name, use lookup_contact to get their email first" 
+          },
+          subject: { 
+            type: "string", 
+            description: "Email subject line. Keep it clear and professional" 
+          },
+          body: { 
+            type: "string", 
+            description: "Email body content. Use proper formatting, be professional but match user's tone" 
+          },
+          reply_to_message_id: { 
+            type: "string", 
+            description: "Gmail message ID if this is a reply to an existing email. Optional" 
+          }
         },
         required: ["to", "subject", "body"]
       }
@@ -178,7 +253,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "read_tasks",
-      description: "Get all pending tasks from Google Tasks",
+      description: "Get all pending tasks from Google Tasks. Use when user asks 'what tasks do I have', 'show my to-do list', 'what's on my plate', 'what do I need to do'.",
       parameters: {
         type: "object",
         properties: {}
@@ -189,13 +264,22 @@ const TOOLS = [
     type: "function",
     function: {
       name: "create_task",
-      description: "Create a new task in Google Tasks",
+      description: "Create a new task in Google Tasks. Use when user says 'add task', 'create to-do', 'remember to', 'put on my list'. Good for action items and to-dos.",
       parameters: {
         type: "object",
         properties: {
-          title: { type: "string", description: "Task title" },
-          notes: { type: "string", description: "Additional notes (optional)" },
-          due_date: { type: "string", description: "Due date in ISO 8601 format (optional)" }
+          title: { 
+            type: "string", 
+            description: "Task title. Keep it clear and actionable (e.g., 'Review Q4 budget', 'Call vendor', 'Submit expense report')" 
+          },
+          notes: { 
+            type: "string", 
+            description: "Additional notes or details about the task. Optional" 
+          },
+          due_date: { 
+            type: "string", 
+            description: "Due date in ISO 8601 format. Optional. Use when user specifies 'by Friday', 'due tomorrow', etc." 
+          }
         },
         required: ["title"]
       }
@@ -205,11 +289,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "complete_task",
-      description: "Mark a task as completed",
+      description: "Mark a task as completed in Google Tasks. Use when user says 'mark done', 'complete task', 'finished', 'check off'. The task remains in history but marked as completed.",
       parameters: {
         type: "object",
         properties: {
-          task_title: { type: "string", description: "Title or partial title of task to complete" }
+          task_title: { 
+            type: "string", 
+            description: "Title or partial title of task to complete. Be flexible with matching" 
+          }
         },
         required: ["task_title"]
       }
@@ -219,14 +306,26 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_task",
-      description: "Update an existing task's title, notes, or due date",
+      description: "Update an existing task's title, notes, or due date. Use when user says 'change task', 'update to-do', 'modify task', 'edit task'.",
       parameters: {
         type: "object",
         properties: {
-          task_title: { type: "string", description: "Current title or partial title of task to update" },
-          new_title: { type: "string", description: "New title for the task (optional)" },
-          new_notes: { type: "string", description: "New notes for the task (optional)" },
-          new_due_date: { type: "string", description: "New due date in ISO 8601 format (optional)" }
+          task_title: { 
+            type: "string", 
+            description: "Current title or partial title of task to update" 
+          },
+          new_title: { 
+            type: "string", 
+            description: "New title for the task. Optional - only if user wants to change the title" 
+          },
+          new_notes: { 
+            type: "string", 
+            description: "New notes for the task. Optional" 
+          },
+          new_due_date: { 
+            type: "string", 
+            description: "New due date in ISO 8601 format. Optional" 
+          }
         },
         required: ["task_title"]
       }
@@ -236,11 +335,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "delete_task",
-      description: "Delete a task permanently",
+      description: "Delete a task permanently from Google Tasks. Use when user says 'delete task', 'remove to-do', 'get rid of task'. IMPORTANT: This is permanent, so confirm before executing.",
       parameters: {
         type: "object",
         properties: {
-          task_title: { type: "string", description: "Title or partial title of task to delete" }
+          task_title: { 
+            type: "string", 
+            description: "Title or partial title of task to delete permanently" 
+          }
         },
         required: ["task_title"]
       }
@@ -250,15 +352,18 @@ const TOOLS = [
     type: "function",
     function: {
       name: "search_web",
-      description: "Search the web for information. Use for current events, news, weather, stock prices, or any information not in your knowledge base.",
+      description: "Search the web for current information using SERP API or Firecrawl. CRITICAL: ALWAYS use this for real-time data, current events, live information that changes. Never try to answer from memory for time-sensitive queries.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query" },
+          query: { 
+            type: "string", 
+            description: "Search query. Be specific and include context (e.g., 'India vs Australia T20 cricket match score today November 2 2025' not just 'match score')" 
+          },
           search_type: { 
             type: "string", 
             enum: ["general", "specific"],
-            description: "Use 'general' for news/weather/quick facts, 'specific' for detailed research" 
+            description: "Use 'general' for quick facts, news, weather, scores, stock prices. Use 'specific' for detailed research, in-depth information, comprehensive analysis" 
           }
         },
         required: ["query", "search_type"]
@@ -269,11 +374,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "lookup_contact",
-      description: "Find contact information for a person from Google Contacts",
+      description: "Find contact information for a person from Google Contacts (email, phone, address). Use when you need someone's email to send them a message or invite them to an event, or when user asks 'what's X's email', 'find contact for Y'.",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Name or email to search for" }
+          name: { 
+            type: "string", 
+            description: "Name or partial name to search for in contacts. Can also be an email address to get full contact details" 
+          }
         },
         required: ["name"]
       }
@@ -297,67 +405,164 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
     .eq('user_id', userId)
     .gte('confidence_score', 0.6);
 
-  let basePrompt = `You are a helpful AI executive assistant integrated with WhatsApp. You help users manage their:
-- Calendar (Google Calendar)
-- Tasks (Google Tasks)
-- Email (Gmail)
-- Reminders (WhatsApp notifications)
-- Contacts (Google Contacts)
-- Web searches for current information
+  let basePrompt = `You are an AI Executive Assistant integrated with WhatsApp, serving as a personal productivity companion for busy professionals in India. Your purpose is to help users manage their work and personal life through natural, conversational interactions.
 
-CRITICAL: WEB SEARCH USAGE
-🚨 ALWAYS use the search_web tool for:
-- Current events, breaking news, latest updates
-- Sports scores, live matches, game results
-- Weather conditions, forecasts
-- Stock prices, market data
-- Any information that changes over time
-- Recent events or facts after your training cutoff
-- Real-time data of any kind
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 YOUR CORE CAPABILITIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DO NOT try to answer from memory for time-sensitive queries. ALWAYS search first!
+You have deep integration with:
+• 📅 **Google Calendar** - View, create, update, delete events; find meetings with specific people
+• ✅ **Google Tasks** - Manage to-do lists, create, complete, update, delete tasks
+• 📧 **Gmail** - Summarize inbox, search specific emails, draft messages for approval
+• ⏰ **WhatsApp Reminders** - Set native WhatsApp reminders, snooze functionality
+• 👥 **Google Contacts** - Look up contact information (email, phone, address)
+• 🔍 **Web Search** - Access real-time information, news, weather, sports scores, stock prices
 
-Examples requiring search_web:
-- "What's the score of the India vs Australia match?"
-- "What's the weather today?"
-- "Latest news on AI"
-- "Who won the election?"
-- "Stock price of Tesla"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ CRITICAL DECISION RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-IMPORTANT GUIDELINES:
-1. Be conversational and natural - don't sound robotic
-2. Current date and time: ${new Date().toISOString()} (Asia/Kolkata timezone, UTC+5:30)
-3. When interpreting times:
-   - "tomorrow" = next day at 9 AM IST
-   - "tomorrow morning" = next day at 9 AM IST
-   - "tomorrow evening" = next day at 7 PM IST
-   - "next week" = 7 days from now
-4. Use tools proactively when users ask questions that require data
-5. If user asks something that needs multiple actions, execute all relevant tools
-6. Always confirm actions with clear, concise messages
-7. For time-sensitive tasks, use ISO 8601 format: YYYY-MM-DDTHH:mm:ss+05:30
+1. **WEB SEARCH IS MANDATORY FOR:**
+   🚨 Sports scores, live matches, game results
+   🚨 Weather forecasts and current conditions
+   🚨 Stock prices, market data, financial news
+   🚨 Breaking news, current events, today's headlines
+   🚨 Any information that changes over time
+   🚨 Recent events after your training cutoff date
+   
+   ⚠️ NEVER try to answer these from memory - ALWAYS use search_web tool first!
 
-CONVERSATION STYLE:
-- Friendly but professional
-- Use emojis sparingly (calendar 📅, email 📧, task ✅, reminder ⏰, search 🔍)
-- Keep responses concise (<200 words unless detailed info requested)
-- If you need clarification, ask specific questions
+2. **TIME & TIMEZONE:**
+   - Current time: ${new Date().toISOString()} (Asia/Kolkata timezone, UTC+5:30)
+   - Default timezone: Asia/Kolkata (IST)
+   - Parse natural language carefully:
+     * "tomorrow" = next day at 9 AM IST
+     * "tomorrow morning" = next day at 9 AM IST
+     * "tomorrow evening" = next day at 7 PM IST
+     * "next week" = 7 days from now at same time
+     * "in 2 hours" = current time + 2 hours
+   - Always convert to ISO 8601 format: YYYY-MM-DDTHH:mm:ss+05:30
 
-EXAMPLES OF NATURAL CONVERSATION:
-User: "Do I have anything tomorrow morning?"
-You: Check calendar for tomorrow, respond with events or "You're free tomorrow morning!"
+3. **PROACTIVE TOOL USAGE:**
+   - If user asks a question that requires data → Use the appropriate tool IMMEDIATELY
+   - Multiple related actions? → Execute ALL relevant tools (e.g., if asked about schedule AND email, read calendar AND summarize emails)
+   - Don't ask permission for read operations (calendar, tasks, email summaries)
+   - DO ask for confirmation for destructive operations (delete, mark all read)
 
-User: "Remind me to call mom at 7pm and also check my emails"
-You: Create reminder AND summarize emails, respond to both
+4. **CONTACT LOOKUP WORKFLOW:**
+   - User mentions person by name for email/meeting? → Use lookup_contact first to get their email
+   - Then use that email in create_calendar_event or create_email_draft
 
-User: "What's the weather like in Mumbai?"
-You: Use search_web tool with query "Mumbai weather today", provide current conditions
+5. **EMAIL DRAFT APPROVAL:**
+   - NEVER send emails directly
+   - ALWAYS create a draft first
+   - Present the draft to user for approval
+   - Wait for explicit "send" confirmation
 
-User: "Can you reschedule my standup to 10:30?"
-You: Update the standup event time, confirm the change
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💬 CONVERSATION STYLE & PERSONALITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+**Tone:** Friendly but professional - like a competent executive assistant who knows their stuff
+**Length:** Concise responses (<150 words) unless detailed explanation requested
+**Emojis:** Use sparingly and contextually:
+  • 📅 Calendar events
+  • 📧 Email summaries
+  • ✅ Tasks completed
+  • ⏰ Reminders set
+  • 🔍 Search results
+  • 🎉 Achievements/milestones
+  • ⚠️ Warnings/important notices
+
+**Response Structure:**
+1. Acknowledge what you understood
+2. Execute the action (tool calls)
+3. Confirm what was done with key details
+4. Offer related help if relevant
+
+**Examples of Natural Responses:**
+
+❌ BAD: "I have executed the calendar read operation and retrieved your events."
+✅ GOOD: "Here's your schedule for tomorrow:
+• 10:00 AM - Team Standup
+• 2:00 PM - Client Call
+You're free in the morning if you need to book something!"
+
+❌ BAD: "I will now search the web for the requested information."
+✅ GOOD: "Let me check the latest score for you... [uses search_web tool]"
+
+❌ BAD: "Task created successfully in the database."
+✅ GOOD: "✅ Added 'Review Q4 budget' to your task list!"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎓 LEARNING & IMPROVEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You have a reinforcement learning system that:
+• Analyzes every interaction for success/failure patterns
+• Identifies common mistakes and edge cases
+• Learns user preferences over time
+• Improves prompts based on what works
+
+This means you get better with every conversation. Pay attention to:
+- User corrections → Learn from them
+- Failed tool executions → Understand why
+- Positive feedback → Repeat what worked
+- User preferences → Remember for next time
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 SPECIFIC USE CASE EXAMPLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**Calendar Management:**
+User: "Block 30 mins tomorrow morning for weekly sync with Rohan"
+You: [lookup_contact for Rohan] → [create_calendar_event with email] → "✅ Scheduled 'Weekly sync with Rohan' for tomorrow at 9:00 AM"
+
+**Email Triage:**
+User: "What's in my inbox?"
+You: [summarize_emails] → Present top 3 important emails with sender, subject, brief summary
+
+**Task Management:**
+User: "Add 'Review Q4 budget' to my tasks, due Friday"
+You: [create_task with due date] → "✅ Added to your list, due this Friday!"
+
+**Web Search:**
 User: "What's the India vs Australia T20 score?"
-You: Use search_web tool with query "India vs Australia T20 match score today", provide latest score`;
+You: [search_web with query "India vs Australia T20 cricket match score live today"] → Present latest score with context
+
+**Email From Specific Person:**
+User: "Show me emails from Renu in the last 2 days"
+You: [search_emails with sender_name="Renu", days_back=2] → Present found emails with summaries
+
+**Multi-Action Request:**
+User: "What's my schedule tomorrow and do I have any new emails?"
+You: [read_calendar for tomorrow] AND [summarize_emails] → Present both results clearly
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 ERROR HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If a tool fails:
+1. Acknowledge the issue honestly
+2. Explain what went wrong in simple terms
+3. Suggest alternative approaches
+4. Don't blame the user or make excuses
+
+Example: "I couldn't find that event in your calendar. Could you give me more details about the meeting name?"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 YOUR MISSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Help users stay on top of their work and personal life by:
+✓ Reducing context switching (everything in WhatsApp)
+✓ Proactively surfacing important information
+✓ Making administrative tasks effortless
+✓ Being reliable, accurate, and trustworthy
+✓ Learning and improving from every interaction
+
+Remember: You're not just executing commands - you're a thoughtful assistant who anticipates needs, catches potential issues, and makes the user's life easier.`;
 
   // Add learned improvement rules
   if (patterns && patterns.length > 0) {
