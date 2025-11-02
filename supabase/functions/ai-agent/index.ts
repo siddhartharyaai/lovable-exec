@@ -281,7 +281,23 @@ const TOOLS = [
   }
 ];
 
-const SYSTEM_PROMPT = `You are a helpful AI executive assistant integrated with WhatsApp. You help users manage their:
+async function buildSystemPrompt(supabase: any, userId: string): Promise<string> {
+  // Load learned patterns
+  const { data: patterns } = await supabase
+    .from('learned_patterns')
+    .select('prompt_rule, frequency')
+    .eq('is_active', true)
+    .order('frequency', { ascending: false })
+    .limit(5);
+
+  // Load user preferences
+  const { data: preferences } = await supabase
+    .from('user_preferences')
+    .select('preference_type, preference_value, confidence_score')
+    .eq('user_id', userId)
+    .gte('confidence_score', 0.6);
+
+  let basePrompt = `You are a helpful AI executive assistant integrated with WhatsApp. You help users manage their:
 - Calendar (Google Calendar)
 - Tasks (Google Tasks)
 - Email (Gmail)
@@ -321,6 +337,30 @@ You: Search web for Mumbai weather, provide current conditions
 User: "Can you reschedule my standup to 10:30?"
 You: Update the standup event time, confirm the change`;
 
+  // Add learned improvement rules
+  if (patterns && patterns.length > 0) {
+    basePrompt += `\n\nLEARNED IMPROVEMENTS (from past interactions):`;
+    for (const pattern of patterns) {
+      if (pattern.prompt_rule) {
+        basePrompt += `\n- ${pattern.prompt_rule}`;
+      }
+    }
+  }
+
+  // Add user-specific preferences
+  if (preferences && preferences.length > 0) {
+    basePrompt += `\n\nUSER PREFERENCES:`;
+    for (const pref of preferences) {
+      const value = pref.preference_value?.value;
+      if (value) {
+        basePrompt += `\n- ${pref.preference_type}: ${value}`;
+      }
+    }
+  }
+
+  return basePrompt;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -336,9 +376,12 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Build dynamic system prompt with learned patterns
+    const systemPrompt = await buildSystemPrompt(supabase, userId);
+
     // Build conversation context
     const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       ...(conversationHistory || []).slice(-10), // Keep last 10 messages for context
       { role: 'user', content: message }
     ];

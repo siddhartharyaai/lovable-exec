@@ -93,6 +93,84 @@ export type Database = {
           },
         ]
       }
+      interaction_feedback: {
+        Row: {
+          ai_response: string
+          created_at: string
+          failure_reason: string | null
+          id: string
+          interaction_id: string
+          reflection_analysis: Json | null
+          success_score: number | null
+          tools_used: string[] | null
+          user_feedback: string | null
+          user_id: string
+          user_message: string
+        }
+        Insert: {
+          ai_response: string
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          interaction_id: string
+          reflection_analysis?: Json | null
+          success_score?: number | null
+          tools_used?: string[] | null
+          user_feedback?: string | null
+          user_id: string
+          user_message: string
+        }
+        Update: {
+          ai_response?: string
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          interaction_id?: string
+          reflection_analysis?: Json | null
+          success_score?: number | null
+          tools_used?: string[] | null
+          user_feedback?: string | null
+          user_id?: string
+          user_message?: string
+        }
+        Relationships: []
+      }
+      learned_patterns: {
+        Row: {
+          context: Json | null
+          created_at: string
+          frequency: number | null
+          id: string
+          is_active: boolean | null
+          pattern_description: string
+          pattern_type: string
+          prompt_rule: string | null
+          updated_at: string
+        }
+        Insert: {
+          context?: Json | null
+          created_at?: string
+          frequency?: number | null
+          id?: string
+          is_active?: boolean | null
+          pattern_description: string
+          pattern_type: string
+          prompt_rule?: string | null
+          updated_at?: string
+        }
+        Update: {
+          context?: Json | null
+          created_at?: string
+          frequency?: number | null
+          id?: string
+          is_active?: boolean | null
+          pattern_description?: string
+          pattern_type?: string
+          prompt_rule?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       logs: {
         Row: {
           created_at: string
@@ -266,6 +344,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_preferences: {
+        Row: {
+          confidence_score: number | null
+          created_at: string
+          id: string
+          preference_type: string
+          preference_value: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          preference_type: string
+          preference_value: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          preference_type?: string
+          preference_value?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       users: {
         Row: {

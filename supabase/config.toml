@@ -103,3 +103,6 @@ verify_jwt = false
 
 [functions.ai-agent]
 verify_jwt = false
+
+[functions.analyze-interaction]
+verify_jwt = false

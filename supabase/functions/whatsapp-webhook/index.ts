@@ -166,6 +166,20 @@ serve(async (req) => {
       console.error(`[${traceId}] Failed to send reply:`, sendResult.error);
     }
 
+    // Trigger async self-reflection analysis (don't wait for it)
+    supabase.functions.invoke('analyze-interaction', {
+      body: {
+        interactionId: traceId,
+        userId: userId,
+        userMessage: messageBody,
+        aiResponse: replyText,
+        toolsUsed: agentResult.data?.toolsUsed || [],
+        traceId: traceId
+      }
+    }).catch((err: any) => {
+      console.error(`[${traceId}] Failed to trigger analysis:`, err);
+    });
+
     // Store outbound message
     await supabase.from('messages').insert({
       user_id: userId,
