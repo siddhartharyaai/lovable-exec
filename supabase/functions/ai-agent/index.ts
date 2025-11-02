@@ -102,13 +102,13 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_calendar_event",
-      description: "Update or reschedule an existing calendar event. Use when user says 'reschedule', 'move', 'change time', 'push back'. IMPORTANT: The handler can do intelligent fuzzy matching by date, person, or partial title. Extract ALL context from the user's query to help find the right event.",
+      description: "Update/reschedule an existing calendar event. Use when user wants to 'change', 'move', 'reschedule', 'update' an event. CRITICAL: Extract 'person' and 'date' separately from generic words like 'appointment', 'meeting'.",
       parameters: {
         type: "object",
         properties: {
           event_title: { 
             type: "string", 
-            description: "Title or partial title of the event to update. Can be fuzzy (e.g., 'sync', 'meeting')" 
+            description: "ONLY use if user mentions a SPECIFIC event name. DO NOT use generic words like 'appointment', 'meeting' - these are not event titles! Can be omitted if only person+date are known." 
           },
           new_start_time: { 
             type: "string", 
@@ -116,14 +116,14 @@ const TOOLS = [
           },
           date: {
             type: "string",
-            description: "Current date of the event to help locate it (e.g., if user says 'reschedule tomorrow's meeting'). Parse time references like 'tomorrow', 'today', 'Monday'."
+            description: "Current date of the event to help locate it. Parse time references like 'tomorrow', 'today', 'Monday' to ISO 8601."
           },
           person: {
             type: "string",
-            description: "Name of person associated with the event. Helps narrow down which event to update."
+            description: "Name of person associated with the event (extract ONLY the name). The system searches both titles and attendees."
           }
         },
-        required: ["event_title", "new_start_time"]
+        required: ["new_start_time"]
       }
     }
   },
@@ -131,24 +131,24 @@ const TOOLS = [
     type: "function",
     function: {
       name: "delete_calendar_event",
-      description: "Delete a calendar event permanently. Use when user says 'cancel', 'delete', 'remove event'. IMPORTANT: This is destructive. The handler is smart enough to do fuzzy matching - it can find events by date, person, or partial title. You should extract ALL available context from the user's query.",
+      description: "Delete a calendar event permanently. Use when user says 'cancel', 'delete', 'remove event'. CRITICAL: You MUST extract 'person' and 'date' separately from generic words like 'appointment', 'meeting'. Example: 'delete appointment with rohan tomorrow' -> person='Rohan', date='tomorrow parsed to ISO', event_title can be omitted or set to actual event name if known.",
       parameters: {
         type: "object",
         properties: {
           event_title: { 
             type: "string", 
-            description: "Title or partial title of the event (e.g., 'appointment', 'meeting', 'sync'). Can be fuzzy - the system will match intelligently" 
+            description: "ONLY use if user mentions a SPECIFIC event name (e.g., 'Weekly sync', 'Team standup'). DO NOT use generic words like 'appointment', 'meeting', 'call' - these are not event titles! Can be omitted if only person+date are known." 
           },
           date: {
             type: "string",
-            description: "Date to search for the event in ISO 8601 format. IMPORTANT: If user says 'tomorrow', 'today', 'next Monday', parse this and include it! This helps narrow down the search."
+            description: "REQUIRED if user mentions any time reference ('tomorrow', 'today', 'next Monday', 'Nov 3'). Parse to ISO 8601 format. This is CRITICAL for finding the right event."
           },
           person: {
             type: "string",
-            description: "Name of person associated with the event (e.g., 'Rohan', 'Priya'). The system will check both event titles and attendees. IMPORTANT: Extract this if user mentions any person!"
+            description: "REQUIRED if user mentions any person name ('with Rohan', 'Priya', etc.). Extract ONLY the person's name (e.g., 'Rohan', not 'with Rohan'). The system searches both titles and attendees."
           }
         },
-        required: ["event_title"]
+        required: []
       }
     }
   },
@@ -440,22 +440,24 @@ You have deep integration with:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 1. **CONTEXT EXTRACTION IS MANDATORY:**
-   🚨 When user mentions "appointment with Rohan tomorrow" → Extract:
-      • event_title: "appointment" 
-      • person: "Rohan"
+   🚨 When user says "delete appointment with Rohan tomorrow" → Extract:
+      • person: "Rohan" (EXTRACT PERSON SEPARATELY!)
       • date: [tomorrow's date in ISO format]
+      • event_title: OMIT (because "appointment" is generic, not the actual event name)
    
-   🚨 When user says "delete the meeting tomorrow" → Extract:
-      • event_title: "meeting"
+   🚨 When user says "delete Weekly sync with Priya tomorrow" → Extract:
+      • event_title: "Weekly sync" (SPECIFIC event name)
+      • person: "Priya"
       • date: [tomorrow's date]
    
-   🚨 When user says "reschedule sync with Priya to 3pm" → Extract:
-      • event_title: "sync"
-      • person: "Priya"
-      • new_start_time: [3pm in ISO format]
+   🚨 When user says "cancel meeting with team tomorrow" → Extract:
+      • person: "team"
+      • date: [tomorrow's date]
+      • event_title: OMIT ("meeting" is generic)
    
-   ⚠️ ALWAYS extract ALL context clues (dates, people, keywords) from user queries!
-   ⚠️ The backend uses intelligent fuzzy matching - give it as much context as possible!
+   ⚠️ **CRITICAL**: Words like "appointment", "meeting", "call", "event" are NOT event titles!
+   ⚠️ **ALWAYS** extract person names and dates as SEPARATE parameters!
+   ⚠️ The backend uses intelligent fuzzy matching - give it person + date for best results!
 
 2. **WEB SEARCH IS MANDATORY FOR:**
    🚨 Sports scores, live matches, game results

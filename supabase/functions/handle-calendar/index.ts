@@ -243,12 +243,14 @@ serve(async (req) => {
       case 'update': {
         const { eventId, title, start, duration, eventTitle, date, person } = intent.entities;
         
+        console.log(`[${traceId}] Update request - eventId: ${eventId}, title: "${eventTitle}", person: "${person}", date: ${date}`);
+        
         // If we have eventTitle but no eventId, search for the event intelligently
         let targetEventId = eventId;
         let matchingEvents: any[] = [];
         
         if (!targetEventId && (eventTitle || person || date)) {
-          console.log(`[${traceId}] Intelligent search for event to update - title: ${eventTitle}, person: ${person}, date: ${date}`);
+          console.log(`[${traceId}] Intelligent search for event to update`);
           
           // Determine search time range
           let searchStart: Date;
@@ -275,11 +277,11 @@ serve(async (req) => {
             orderBy: 'startTime',
           });
           
-          // Add search query if we have title or person
-          if (eventTitle) {
-            searchParams.append('q', eventTitle);
-          } else if (person) {
+          // Use person for Google Calendar search if available, otherwise use title
+          if (person) {
             searchParams.append('q', person);
+          } else if (eventTitle) {
+            searchParams.append('q', eventTitle);
           }
           
           const searchResponse = await fetch(
@@ -291,30 +293,43 @@ serve(async (req) => {
             const searchData = await searchResponse.json();
             let candidates = searchData.items || [];
             
-            console.log(`[${traceId}] Initial search found ${candidates.length} events`);
+            console.log(`[${traceId}] Initial Google search found ${candidates.length} events`);
             
-            // Smart filtering based on context
+            // CRITICAL: Filter by person first if specified
             if (person) {
-              // Filter by person in title or attendees
+              const personLower = person.toLowerCase();
               candidates = candidates.filter((event: any) => {
-                const titleMatch = event.summary?.toLowerCase().includes(person.toLowerCase());
-                const attendeeMatch = event.attendees?.some((att: any) => 
-                  att.email?.toLowerCase().includes(person.toLowerCase()) ||
-                  att.displayName?.toLowerCase().includes(person.toLowerCase())
-                );
-                return titleMatch || attendeeMatch;
+                const titleMatch = event.summary?.toLowerCase().includes(personLower);
+                const attendeeMatch = event.attendees?.some((att: any) => {
+                  const email = att.email?.toLowerCase() || '';
+                  const displayName = att.displayName?.toLowerCase() || '';
+                  return email.includes(personLower) || displayName.includes(personLower);
+                });
+                const match = titleMatch || attendeeMatch;
+                console.log(`[${traceId}] Event "${event.summary}" - person match: ${match} (title: ${titleMatch}, attendee: ${attendeeMatch})`);
+                return match;
               });
               console.log(`[${traceId}] After person filter: ${candidates.length} events`);
             }
             
+            // Only filter by title if it's specific (not generic terms)
             if (eventTitle) {
-              // Fuzzy match on title
+              const genericTerms = ['appointment', 'meeting', 'call', 'event', 'sync'];
               const titleLower = eventTitle.toLowerCase();
-              candidates = candidates.filter((event: any) => {
-                const eventTitleLower = event.summary?.toLowerCase() || '';
-                return eventTitleLower.includes(titleLower) || titleLower.includes(eventTitleLower);
-              });
-              console.log(`[${traceId}] After title filter: ${candidates.length} events`);
+              const isGeneric = genericTerms.some(term => titleLower === term);
+              
+              if (!isGeneric) {
+                // Apply fuzzy title matching only for specific titles
+                candidates = candidates.filter((event: any) => {
+                  const eventTitleLower = event.summary?.toLowerCase() || '';
+                  const match = eventTitleLower.includes(titleLower) || titleLower.includes(eventTitleLower);
+                  console.log(`[${traceId}] Event "${event.summary}" - title match: ${match}`);
+                  return match;
+                });
+                console.log(`[${traceId}] After specific title filter: ${candidates.length} events`);
+              } else {
+                console.log(`[${traceId}] Skipping generic title filter for "${eventTitle}"`);
+              }
             }
             
             matchingEvents = candidates;
@@ -532,12 +547,14 @@ serve(async (req) => {
       case 'delete': {
         const { eventId, eventTitle, date, person } = intent.entities;
         
+        console.log(`[${traceId}] Delete request - eventId: ${eventId}, title: "${eventTitle}", person: "${person}", date: ${date}`);
+        
         // If we have eventTitle but no eventId, search for the event intelligently
         let targetEventId = eventId;
         let matchingEvents: any[] = [];
         
         if (!targetEventId && (eventTitle || person || date)) {
-          console.log(`[${traceId}] Intelligent search for event to delete - title: ${eventTitle}, person: ${person}, date: ${date}`);
+          console.log(`[${traceId}] Intelligent search for event to delete`);
           
           // Determine search time range
           let searchStart: Date;
@@ -564,11 +581,11 @@ serve(async (req) => {
             orderBy: 'startTime',
           });
           
-          // Add search query if we have title or person
-          if (eventTitle) {
-            searchParams.append('q', eventTitle);
-          } else if (person) {
+          // Use person for Google Calendar search if available, otherwise use title
+          if (person) {
             searchParams.append('q', person);
+          } else if (eventTitle) {
+            searchParams.append('q', eventTitle);
           }
           
           const searchResponse = await fetch(
@@ -580,30 +597,43 @@ serve(async (req) => {
             const searchData = await searchResponse.json();
             let candidates = searchData.items || [];
             
-            console.log(`[${traceId}] Initial search found ${candidates.length} events`);
+            console.log(`[${traceId}] Initial Google search found ${candidates.length} events`);
             
-            // Smart filtering based on context
+            // CRITICAL: Filter by person first if specified
             if (person) {
-              // Filter by person in title or attendees
+              const personLower = person.toLowerCase();
               candidates = candidates.filter((event: any) => {
-                const titleMatch = event.summary?.toLowerCase().includes(person.toLowerCase());
-                const attendeeMatch = event.attendees?.some((att: any) => 
-                  att.email?.toLowerCase().includes(person.toLowerCase()) ||
-                  att.displayName?.toLowerCase().includes(person.toLowerCase())
-                );
-                return titleMatch || attendeeMatch;
+                const titleMatch = event.summary?.toLowerCase().includes(personLower);
+                const attendeeMatch = event.attendees?.some((att: any) => {
+                  const email = att.email?.toLowerCase() || '';
+                  const displayName = att.displayName?.toLowerCase() || '';
+                  return email.includes(personLower) || displayName.includes(personLower);
+                });
+                const match = titleMatch || attendeeMatch;
+                console.log(`[${traceId}] Event "${event.summary}" - person match: ${match} (title: ${titleMatch}, attendee: ${attendeeMatch})`);
+                return match;
               });
               console.log(`[${traceId}] After person filter: ${candidates.length} events`);
             }
             
+            // Only filter by title if it's specific (not generic terms)
             if (eventTitle) {
-              // Fuzzy match on title - check if title contains the search term or vice versa
+              const genericTerms = ['appointment', 'meeting', 'call', 'event', 'sync'];
               const titleLower = eventTitle.toLowerCase();
-              candidates = candidates.filter((event: any) => {
-                const eventTitleLower = event.summary?.toLowerCase() || '';
-                return eventTitleLower.includes(titleLower) || titleLower.includes(eventTitleLower);
-              });
-              console.log(`[${traceId}] After title filter: ${candidates.length} events`);
+              const isGeneric = genericTerms.some(term => titleLower === term);
+              
+              if (!isGeneric) {
+                // Apply fuzzy title matching only for specific titles
+                candidates = candidates.filter((event: any) => {
+                  const eventTitleLower = event.summary?.toLowerCase() || '';
+                  const match = eventTitleLower.includes(titleLower) || titleLower.includes(eventTitleLower);
+                  console.log(`[${traceId}] Event "${event.summary}" - title match: ${match}`);
+                  return match;
+                });
+                console.log(`[${traceId}] After specific title filter: ${candidates.length} events`);
+              } else {
+                console.log(`[${traceId}] Skipping generic title filter for "${eventTitle}"`);
+              }
             }
             
             matchingEvents = candidates;
