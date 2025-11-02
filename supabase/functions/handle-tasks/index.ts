@@ -252,6 +252,140 @@ serve(async (req) => {
           message += `_...and ${totalTasks - 5} more tasks_`;
         }
       }
+
+    } else if (action === 'update') {
+      const { taskTitle, newTitle, newNotes, newDue } = intent.entities;
+      
+      // Get all task lists
+      const listResponse = await fetch(
+        'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!listResponse.ok) {
+        throw new Error('Failed to fetch task lists');
+      }
+
+      const listData = await listResponse.json();
+      const lists = listData.items || [];
+
+      // Search for the task across all lists
+      let targetTask: any = null;
+      let targetList: string = '';
+
+      for (const list of lists) {
+        const tasksResponse = await fetch(
+          `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks`,
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+        const tasksData = await tasksResponse.json();
+        const tasks = tasksData.items || [];
+        
+        const match = tasks.find((t: any) => 
+          t.title.toLowerCase().includes(taskTitle.toLowerCase())
+        );
+        
+        if (match) {
+          targetTask = match;
+          targetList = list.id;
+          break;
+        }
+      }
+
+      if (!targetTask || !targetList) {
+        message = `❌ Task "${taskTitle}" not found.`;
+      } else {
+        // Update task
+        const updateBody: any = {};
+        if (newTitle) updateBody.title = newTitle;
+        if (newNotes) updateBody.notes = newNotes;
+        if (newDue) updateBody.due = newDue;
+
+        const updateResponse = await fetch(
+          `https://tasks.googleapis.com/tasks/v1/lists/${targetList}/tasks/${targetTask.id}`,
+          {
+            method: 'PATCH',
+            headers: { 
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updateBody),
+          }
+        );
+
+        if (!updateResponse.ok) {
+          throw new Error('Failed to update task');
+        }
+
+        message = `✅ Task updated: "${newTitle || targetTask.title}"`;
+      }
+
+    } else if (action === 'delete') {
+      const { taskTitle } = intent.entities;
+      
+      // Get all task lists
+      const listResponse = await fetch(
+        'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!listResponse.ok) {
+        throw new Error('Failed to fetch task lists');
+      }
+
+      const listData = await listResponse.json();
+      const lists = listData.items || [];
+
+      // Search for the task across all lists
+      let targetTask: any = null;
+      let targetList: string = '';
+
+      for (const list of lists) {
+        const tasksResponse = await fetch(
+          `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks`,
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+        const tasksData = await tasksResponse.json();
+        const tasks = tasksData.items || [];
+        
+        const match = tasks.find((t: any) => 
+          t.title.toLowerCase().includes(taskTitle.toLowerCase())
+        );
+        
+        if (match) {
+          targetTask = match;
+          targetList = list.id;
+          break;
+        }
+      }
+
+      if (!targetTask || !targetList) {
+        message = `❌ Task "${taskTitle}" not found.`;
+      } else {
+        // Delete task
+        const deleteResponse = await fetch(
+          `https://tasks.googleapis.com/tasks/v1/lists/${targetList}/tasks/${targetTask.id}`,
+          {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+
+        if (!deleteResponse.ok) {
+          throw new Error('Failed to delete task');
+        }
+
+        message = `✅ Task deleted: "${targetTask.title}"`;
+      }
+
     } else {
       message = 'Tasks action not yet implemented';
     }

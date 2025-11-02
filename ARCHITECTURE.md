@@ -99,12 +99,23 @@
 ```typescript
 type Intent = 
   | { type: 'reminder_create', entities: { text: string, due_ts: string } }
+  | { type: 'reminder_snooze', entities: { duration_minutes: number } }
   | { type: 'gcal_create_event', entities: { title: string, start: string, duration?: number, attendees?: string[] } }
   | { type: 'gcal_read_events', entities: { start?: string, end?: string } }
-  | { type: 'gtask_create_task', entities: { title: string, due?: string, list_id?: string } }
-  | { type: 'gtask_read_tasks', entities: { list_id?: string } }
+  | { type: 'gcal_update_event', entities: { event_title: string, new_start_time: string } }
+  | { type: 'gcal_delete_event', entities: { event_title: string } }
+  | { type: 'gcal_read_by_person', entities: { person_name: string, start_date?: string, end_date?: string } }
+  | { type: 'gtask_create_task', entities: { title: string, notes?: string, due?: string } }
+  | { type: 'gtask_read_tasks', entities: {} }
+  | { type: 'gtask_update_task', entities: { task_title: string, new_title?: string, new_notes?: string, new_due?: string } }
+  | { type: 'gtask_delete_task', entities: { task_title: string } }
+  | { type: 'gtask_complete_task', entities: { task_title: string } }
   | { type: 'gmail_summarize_unread', entities: { max?: number } }
-  | { type: 'web_search', entities: { query: string } }
+  | { type: 'gmail_mark_read', entities: { scope: 'all' } }
+  | { type: 'gmail_send', entities: { to: string, subject: string, body: string } }
+  | { type: 'gmail_reply', entities: { to: string, subject: string, body: string, messageId: string } }
+  | { type: 'web_search', entities: { query: string, search_type: 'general' | 'specific' } }
+  | { type: 'contact_lookup', entities: { name: string } }
   | { type: 'fallback', entities: { query: string } }
 ```
 
@@ -130,6 +141,9 @@ send_whatsapp(user.phone, response.body)
 #### Task Handler
 - Create: `google.tasks.insert()` with list resolution
 - Read: Fetch tasks, show status and due dates
+- Update: Search by title, `google.tasks.patch()` with new fields
+- Delete: Search by title, `google.tasks.delete()` permanently
+- Complete: Mark task status as 'completed'
 
 #### Email Handler
 - Summarize: Fetch unread → AI summarize top N → send digest

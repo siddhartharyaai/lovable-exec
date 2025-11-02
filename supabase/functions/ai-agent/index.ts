@@ -202,6 +202,37 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "update_task",
+      description: "Update an existing task's title, notes, or due date",
+      parameters: {
+        type: "object",
+        properties: {
+          task_title: { type: "string", description: "Current title or partial title of task to update" },
+          new_title: { type: "string", description: "New title for the task (optional)" },
+          new_notes: { type: "string", description: "New notes for the task (optional)" },
+          new_due_date: { type: "string", description: "New due date in ISO 8601 format (optional)" }
+        },
+        required: ["task_title"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_task",
+      description: "Delete a task permanently",
+      parameters: {
+        type: "object",
+        properties: {
+          task_title: { type: "string", description: "Title or partial title of task to delete" }
+        },
+        required: ["task_title"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "search_web",
       description: "Search the web for information. Use for current events, news, weather, stock prices, or any information not in your knowledge base.",
       parameters: {
@@ -544,6 +575,39 @@ serve(async (req) => {
                 }
               });
               result = completeTaskResult.data?.message || 'Task completed';
+              break;
+
+            case 'update_task':
+              const updateTaskResult = await supabase.functions.invoke('handle-tasks', {
+                body: { 
+                  intent: { 
+                    entities: {
+                      taskTitle: args.task_title,
+                      newTitle: args.new_title,
+                      newNotes: args.new_notes,
+                      newDue: args.new_due_date
+                    } 
+                  }, 
+                  userId, 
+                  traceId,
+                  action: 'update'
+                }
+              });
+              result = updateTaskResult.data?.message || 'Task updated';
+              break;
+
+            case 'delete_task':
+              const deleteTaskResult = await supabase.functions.invoke('handle-tasks', {
+                body: { 
+                  intent: { 
+                    entities: { taskTitle: args.task_title } 
+                  }, 
+                  userId, 
+                  traceId,
+                  action: 'delete'
+                }
+              });
+              result = deleteTaskResult.data?.message || 'Task deleted';
               break;
 
             case 'search_web':

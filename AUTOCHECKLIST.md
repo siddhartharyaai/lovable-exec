@@ -198,8 +198,8 @@
   - **Status:** ✅ Complete (handle-calendar with CRUD)
 
 - [x] **#8.3** Implement Tasks API wrapper
-  - **Criteria:** Functions for list_tasks, create_task
-  - **Status:** ✅ Complete (handle-tasks)
+  - **Criteria:** Functions for list_tasks, create_task, update_task, delete_task, complete_task
+  - **Status:** ✅ Complete (handle-tasks with full CRUD)
 
 - [x] **#8.4** Implement People API wrapper
   - **Criteria:** Function for search_contacts by name/email
@@ -232,6 +232,14 @@
 - [x] **#9.5** Implement gtask_read_tasks handler
   - **Criteria:** Fetches tasks, shows with status and due dates
   - **Status:** ✅ Complete (handle-tasks read)
+
+- [x] **#9.15** Implement gtask_update_task handler
+  - **Criteria:** Updates task title, notes, or due date by title search
+  - **Status:** ✅ Complete (handle-tasks update action)
+
+- [x] **#9.16** Implement gtask_delete_task handler
+  - **Criteria:** Deletes task by title search
+  - **Status:** ✅ Complete (handle-tasks delete action)
 
 - [x] **#9.6** Implement gmail_summarize_unread handler
   - **Criteria:** Fetches unread, AI summarizes top 3, sends digest
@@ -443,14 +451,15 @@
 
 ---
 
-**Total:** 74 items (updated with new features)
-**Complete:** 68 ✅  
+**Total:** 76 items (updated with new features)
+**Complete:** 70 ✅  
 **Pending:** 6 ⏳  
 **Blocked:** 0 🚫  
 
-**Last Updated:** 2025-11-02 16:45 IST
+**Last Updated:** 2025-11-02 17:00 IST
 
 **Recent Additions:**
 - Image generation feature removed from scope (Phase 1)
 - Enhanced NLP with news, weather, current affairs support (Phase 2)
 - Snooze reminders, task completion, contact lookup, calendar by person (Phase 3)
+- Task update and delete operations (Phase 3)

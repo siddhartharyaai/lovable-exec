@@ -163,7 +163,7 @@ Create a conversational AI assistant that:
 - ✅ Google OAuth with token refresh
 - ✅ WhatsApp native reminders
 - ✅ Calendar CRUD operations
-- ✅ Task creation and reading
+- ✅ Task CRUD operations (create, read, update, delete, complete)
 - ✅ Email unread summary
 - ✅ Daily briefing scheduler
 - ✅ Birthday reminder scheduler
@@ -175,7 +175,7 @@ Create a conversational AI assistant that:
 - ✅ Web search (SERP API for general, Firecrawl for specific)
 - ✅ Contact lookup via Google People API
 - ✅ Reminder snooze functionality
-- ✅ Task completion
+- ✅ Task update and delete operations
 - ✅ Calendar event modification and deletion
 - ✅ Calendar events by person/attendee
 - ✅ News, weather, and current affairs queries
