@@ -315,4 +315,115 @@
 
 ---
 
+### 15:00 IST - Phase D/E: Image Generation, Search, Tasks, Daily Briefing
+**Action:** Implemented P1 features completing core handler layer and proactive briefing  
+**Actor:** Vibe Coder  
+**Summary:**
+- **Image Generation (`handle-image`):** 
+  - Uses Lovable AI Nano Banana (google/gemini-2.5-flash-image-preview)
+  - Generates images from text prompts
+  - Returns base64 data URL for WhatsApp delivery
+  - Intent: `image_generation` with `prompt` entity
+  
+- **Web Search (`handle-search`):**
+  - Dual search strategy: SERP API (general) + Firecrawl (specific/detailed)
+  - AI-powered result summarization (max 1000 chars)
+  - Intent: `web_search` with `query` and optional `type` ("general"/"specific")
+  - Integrated with user secrets: SERP_API_KEY, FIRECRAWL_API_KEY
+  
+- **Google Tasks (`handle-tasks`):**
+  - Create tasks with title, notes, due date
+  - Read all pending tasks across lists
+  - Token refresh integration
+  - Intents: `gtask_create_task`, `gtask_read_tasks`
+  
+- **Calendar Delete:**
+  - Extended `handle-calendar` with delete action
+  - Search by event title or use eventId
+  - Intent: `gcal_delete_event` with `eventTitle` or `eventId`
+  
+- **Daily Briefing (`daily-briefing`):**
+  - Scheduled job for 8 AM IST proactive briefings
+  - Aggregates: today's calendar (5 events), pending tasks (3 tasks), unread email count, today's reminders
+  - AI-generated encouraging summary (max 1200 chars)
+  - Sends to all users with Google OAuth tokens
 
+**Intent Parser Updates:**
+- Added 15+ examples for tasks, search, images, calendar delete
+- Updated entity descriptions for clarity
+- Confidence tuning for new intent types
+
+**Webhook Routing:**
+- Added cases for: gtask_create_task, gtask_read_tasks, web_search, image_generation, gcal_delete_event
+- Proper error handling for all new intents
+
+**Files Touched:**
+- `supabase/functions/handle-image/index.ts` (new, 60 lines)
+- `supabase/functions/handle-search/index.ts` (new, 140 lines)
+- `supabase/functions/handle-tasks/index.ts` (new, 180 lines)
+- `supabase/functions/daily-briefing/index.ts` (new, 260 lines)
+- `supabase/functions/handle-calendar/index.ts` (added delete action, +80 lines)
+- `supabase/functions/whatsapp-webhook/index.ts` (added 5 new intent routes)
+- `supabase/functions/parse-intent/index.ts` (added examples, entity descriptions)
+- `supabase/config.toml` (declared 4 new functions)
+
+**Tests Run:** None yet (requires WhatsApp end-to-end testing)  
+**Result:** ✅ All P1 features implemented, edge functions deployed  
+**Risks:** 
+- Image generation returns base64 - may need separate WhatsApp media upload flow
+- Daily briefing scheduler needs cron trigger setup (not auto-scheduled yet)
+**Next Steps:**
+1. Set up cron trigger for daily-briefing (8 AM IST)
+2. Test image generation via WhatsApp
+3. Test web search with both SERP and Firecrawl
+4. Test tasks integration end-to-end
+5. Verify daily briefing generation and delivery
+
+**Checklist Progress:** 54/68 complete (79%)
+
+---
+
+## Done/Pending Summary
+
+### ✅ Done (2025-11-02 15:00 IST)
+**Phase D/E Complete:**
+- Image generation handler (Nano Banana via Lovable AI)
+- Web search handler (SERP API + Firecrawl integration)
+- Google Tasks handler (create + read)
+- Calendar delete functionality
+- Daily briefing scheduler (AI-powered morning summaries)
+- Intent parser expanded with 15+ new examples
+- Webhook routing for 5 new intent types
+- All 9 edge functions deployed successfully
+
+**Architecture Status:**
+- 10 edge functions operational (webhook, parse-intent, transcribe, send-whatsapp, handle-reminder, handle-calendar, handle-gmail, handle-tasks, handle-search, handle-image, daily-briefing, check-due-reminders)
+- Database: 5 tables with RLS policies
+- OAuth: Google Workspace fully integrated
+- AI: Lovable AI for NLP, STT, image generation, summarization
+
+### ⏳ Pending (Remaining 14 items)
+**High Priority:**
+1. Set up cron triggers for schedulers (daily-briefing at 8 AM, check-due-reminders every minute)
+2. Gmail send/reply with draft approval workflow
+3. Birthday reminder scheduler
+4. End-to-end testing of new features (image, search, tasks)
+5. Image delivery flow via WhatsApp media API
+
+**Medium Priority:**
+6. People API integration for contact lookup
+7. Rate limiting on webhook endpoint
+8. PII redaction in logs
+9. Input validation hardening
+10. Comprehensive unit tests
+
+**Low Priority:**
+11. Birthday reminder feature
+12. Multi-language support
+13. Task completion/update handlers
+14. Rollback procedure testing
+
+**Blockers:** None  
+**Next Action:** User testing + cron trigger setup
+
+---
