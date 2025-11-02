@@ -639,6 +639,26 @@ serve(async (req) => {
 
     console.log(`[${traceId}] AI decision:`, JSON.stringify(aiMessage, null, 2));
 
+    // Safety check: Force web search for queries about live/current information
+    const requiresSearch = !aiMessage.tool_calls && (
+      /\b(score|match|live|weather|today|now|current|latest|news|stock|price)\b/i.test(message)
+    );
+    
+    if (requiresSearch) {
+      console.log(`[${traceId}] Forcing web search for current information query`);
+      aiMessage.tool_calls = [{
+        id: `call_forced_${Date.now()}`,
+        type: 'function',
+        function: {
+          name: 'search_web',
+          arguments: JSON.stringify({
+            query: message,
+            search_type: 'general'
+          })
+        }
+      }];
+    }
+
     // Check if AI wants to call tools
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
       const toolResults = [];
