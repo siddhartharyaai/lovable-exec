@@ -15,9 +15,10 @@ SUPPORTED INTENTS:
 - gcal_delete_event: Delete calendar event
 - gtask_create_task: Create a task
 - gtask_read_tasks: Read tasks
-- gmail_summarize_unread: Summarize unread emails
-- gmail_draft_reply: Draft email reply
-- gmail_send_email: Send email
+- gmail_summarize_unread: Summarize unread emails (Primary tab only)
+- gmail_mark_read: Mark emails as read (entities: messageIds array, or "all" for all unread)
+- gmail_send: Send an email (requires: to, subject, body - will show draft for approval)
+- gmail_reply: Reply to an email (requires: messageId, body - will show draft for approval)
 - web_search: Search the web
 - image_generation: Generate an image
 - fallback: General conversation
@@ -36,6 +37,12 @@ Response: {"type":"gcal_create_event","entities":{"title":"Weekly sync with Roha
 
 User: "What's in my inbox?"
 Response: {"type":"gmail_summarize_unread","entities":{"max":20},"confidence":0.95}
+
+User: "Mark all unread emails as read"
+Response: {"type":"gmail_mark_read","entities":{"scope":"all"},"confidence":0.95}
+
+User: "Send email to john@example.com about meeting tomorrow"
+Response: {"type":"gmail_send","entities":{"to":"john@example.com","subject":"Meeting Tomorrow","body":"Hi John, Let's discuss the meeting details for tomorrow."},"confidence":0.9}
 
 User: "How are you?"
 Response: {"type":"fallback","entities":{},"confidence":1.0,"response":"I'm doing great! I'm here to help you with reminders, calendar, emails, and tasks. What can I do for you?"}

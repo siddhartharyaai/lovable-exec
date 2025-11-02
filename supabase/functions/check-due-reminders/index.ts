@@ -78,6 +78,81 @@ serve(async (req) => {
 
     console.log(`[${traceId}] Processed ${processed} reminders, ${failed} failed`);
 
+    // Check for upcoming calendar events (15 minutes before)
+    const fifteenMinutesFromNow = new Date(Date.now() + 15 * 60 * 1000);
+    const twentyMinutesFromNow = new Date(Date.now() + 20 * 60 * 1000);
+    
+    // Get all users with OAuth tokens
+    const { data: tokens, error: tokenError } = await supabase
+      .from('oauth_tokens')
+      .select('user_id, access_token, refresh_token, expires_at, provider')
+      .eq('provider', 'google');
+    
+    if (tokens && tokens.length > 0) {
+      for (const tokenData of tokens) {
+        try {
+          let accessToken = tokenData.access_token;
+          
+          // Check if token is expired
+          const expiresAt = new Date(tokenData.expires_at);
+          if (expiresAt <= new Date()) {
+            // Token expired, try to refresh
+            const refreshResult = await supabase.functions.invoke('refresh-google-token', {
+              body: { userId: tokenData.user_id }
+            });
+            
+            if (refreshResult.error || !refreshResult.data?.access_token) {
+              console.error(`[${traceId}] Failed to refresh token for user ${tokenData.user_id}`);
+              continue;
+            }
+            
+            accessToken = refreshResult.data.access_token;
+          }
+          
+          // Fetch upcoming events
+          const eventResponse = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+            `timeMin=${fifteenMinutesFromNow.toISOString()}&` +
+            `timeMax=${twentyMinutesFromNow.toISOString()}&` +
+            `singleEvents=true&orderBy=startTime`,
+            {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            }
+          );
+          
+          if (eventResponse.ok) {
+            const eventData = await eventResponse.json();
+            const upcomingEvents = eventData.items || [];
+            
+            for (const event of upcomingEvents) {
+              const eventStart = new Date(event.start.dateTime || event.start.date);
+              const timeUntilEvent = Math.round((eventStart.getTime() - Date.now()) / 60000);
+              
+              // Only send if it's close to 15 minutes
+              if (timeUntilEvent >= 14 && timeUntilEvent <= 16) {
+                const eventTime = eventStart.toLocaleString('en-IN', {
+                  timeZone: 'Asia/Kolkata',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                });
+                
+                const message = `📅 **Upcoming Event in 15 minutes!**\n\n*${event.summary}*\n${eventTime} IST${event.location ? `\n📍 ${event.location}` : ''}`;
+                
+                await supabase.functions.invoke('send-whatsapp', {
+                  body: { userId: tokenData.user_id, message, traceId }
+                });
+                
+                console.log(`[${traceId}] Sent pre-event notification for: ${event.summary}`);
+              }
+            }
+          }
+        } catch (eventError) {
+          console.error(`[${traceId}] Error checking events for user:`, eventError);
+        }
+      }
+    }
+
     return new Response(JSON.stringify({ 
       success: true,
       processed,

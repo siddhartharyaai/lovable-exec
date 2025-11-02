@@ -57,9 +57,56 @@ serve(async (req) => {
       case 'create': {
         const { title, start, duration, attendees, description } = intent.entities;
         
+        if (!title || !start) {
+          return new Response(JSON.stringify({ 
+            message: "I need at least a title and time. Try: 'Schedule meeting tomorrow at 3pm'"
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
         // Calculate end time
         const startTime = new Date(start);
         const endTime = new Date(startTime.getTime() + (duration || 30) * 60000);
+
+        // Check for conflicts
+        console.log(`[${traceId}] Checking for conflicts from ${startTime.toISOString()} to ${endTime.toISOString()}`);
+        
+        const conflictParams = new URLSearchParams({
+          timeMin: startTime.toISOString(),
+          timeMax: endTime.toISOString(),
+          singleEvents: 'true',
+        });
+
+        const conflictResponse = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?${conflictParams}`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+
+        if (conflictResponse.ok) {
+          const conflictData = await conflictResponse.json();
+          const conflicts = conflictData.items || [];
+          
+          if (conflicts.length > 0) {
+            console.log(`[${traceId}] Found ${conflicts.length} conflicting event(s)`);
+            const conflictList = conflicts.map((e: any) => {
+              const cStart = new Date(e.start.dateTime || e.start.date);
+              const cTime = cStart.toLocaleString('en-GB', { 
+                timeZone: 'Asia/Kolkata',
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+              });
+              return `• ${e.summary} at ${cTime}`;
+            }).join('\n');
+            
+            message = `⚠️ **Time Conflict Detected!**\n\nYou already have:\n${conflictList}\n\nat that time.\n\nWould you like to:\n1. Reschedule the new event\n2. Reschedule the existing event(s)\n3. Create anyway`;
+            
+            return new Response(JSON.stringify({ message }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
 
         const event = {
           summary: title,

@@ -30,6 +30,34 @@ serve(async (req) => {
 
     console.log(`[${traceId}] Creating reminder: ${text} at ${due_ts}`);
 
+    // Check for duplicate reminders
+    const { data: existingReminders, error: checkError } = await supabase
+      .from('reminders')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('text', text)
+      .eq('status', 'pending')
+      .gte('due_ts', new Date(Date.now() - 3600000).toISOString()) // Within 1 hour
+      .lte('due_ts', new Date(Date.now() + 3600000).toISOString());
+
+    if (existingReminders && existingReminders.length > 0) {
+      const existing = existingReminders[0];
+      const existingTime = new Date(existing.due_ts).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        day: 'numeric',
+        month: 'short'
+      });
+      
+      const message = `⚠️ You already have a similar reminder:\n\n"${existing.text}"\nat *${existingTime} IST*\n\nWould you like to create this duplicate anyway?`;
+      
+      return new Response(JSON.stringify({ message }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Insert reminder
     const { error } = await supabase
       .from('reminders')

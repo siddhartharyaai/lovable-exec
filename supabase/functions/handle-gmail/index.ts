@@ -55,9 +55,9 @@ serve(async (req) => {
     if (intent.type === 'gmail_summarize_unread') {
       const maxResults = intent.entities?.max || 10;
 
-      // Fetch unread messages
+      // Fetch unread messages from PRIMARY category only
       const response = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread&maxResults=${maxResults}`,
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+category:primary&maxResults=${maxResults}`,
         {
           headers: { 'Authorization': `Bearer ${accessToken}` },
         }
@@ -102,11 +102,16 @@ serve(async (req) => {
             messages: [
               { 
                 role: 'system', 
-                content: 'You are a helpful email assistant. Summarize the top unread emails in a concise, actionable way. Use emojis and keep it brief.' 
+                content: `You are a proactive email assistant. Analyze emails and provide:
+1. A detailed summary (2-3 sentences per email) of what each email is about
+2. Actionable insights - what the user should do
+3. Urgency indicators - what needs immediate attention
+4. Offer to help - suggest actions like "Would you like me to mark any as read?" or "Should I draft a reply?"
+Use emojis for better readability. Be conversational and helpful.` 
               },
               { 
                 role: 'user', 
-                content: `I have ${messages.length} unread emails. Here are the top 3:\n\n${emailList}\n\nPlease provide a brief summary highlighting what needs attention.` 
+                content: `I have ${messages.length} unread emails in my Primary inbox. Here are the top 3:\n\n${emailList}\n\nPlease provide a detailed summary with actionable insights for each email. Then ask me if I'd like to take any actions on these emails (mark as read, reply, etc.).` 
               }
             ],
             temperature: 0.7,
@@ -120,8 +125,66 @@ serve(async (req) => {
         const aiData = await aiResponse.json();
         const summary = aiData.choices[0].message.content;
 
-        message = `📧 **Inbox Summary** (${messages.length} unread)\n\n${summary}`;
+        message = `📧 **Inbox Summary** (${messages.length} unread in Primary)\n\n${summary}`;
       }
+    } else if (intent.type === 'gmail_mark_read') {
+      const scope = intent.entities?.scope || 'all';
+      
+      if (scope === 'all') {
+        // Fetch all unread message IDs from primary
+        const response = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+category:primary`,
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch unread messages');
+        }
+
+        const data = await response.json();
+        const messageIds = (data.messages || []).map((m: any) => m.id);
+
+        if (messageIds.length === 0) {
+          message = '✅ No unread emails in Primary inbox!';
+        } else {
+          // Mark all as read using batchModify
+          const markReadResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify`,
+            {
+              method: 'POST',
+              headers: { 
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                ids: messageIds,
+                removeLabelIds: ['UNREAD'],
+              }),
+            }
+          );
+
+          if (!markReadResponse.ok) {
+            throw new Error('Failed to mark emails as read');
+          }
+
+          message = `✅ Marked ${messageIds.length} email(s) as read in your Primary inbox!`;
+        }
+      } else {
+        message = 'Marking specific emails as read - not yet implemented';
+      }
+    } else if (intent.type === 'gmail_send' || intent.type === 'gmail_reply') {
+      // Draft approval workflow
+      const { to, subject, body, messageId } = intent.entities;
+      
+      message = `📧 **Email Draft**\n\n`;
+      if (to) message += `**To:** ${to}\n`;
+      if (subject) message += `**Subject:** ${subject}\n`;
+      message += `\n${body}\n\n`;
+      message += `---\n\n⚠️ *Draft approval required* - Reply "send it" to send this email, or "cancel" to discard.`;
+      
+      // TODO: Store draft in DB with pending status and userId for approval flow
     } else {
       message = 'Gmail action not yet implemented';
     }
