@@ -48,6 +48,14 @@ serve(async (req) => {
       : `whatsapp:${twilioWhatsAppNumber}`;
     console.log(`[${traceId}] Sending WhatsApp to ${toNumber} from ${fromNumber}`);
 
+    // Truncate message if it exceeds WhatsApp limit (1600 characters)
+    const MAX_LENGTH = 1550; // Leave some buffer
+    let finalMessage = message;
+    if (message.length > MAX_LENGTH) {
+      console.log(`[${traceId}] Message too long (${message.length} chars), truncating to ${MAX_LENGTH}`);
+      finalMessage = message.substring(0, MAX_LENGTH) + '\n\n...(message truncated)';
+    }
+
     // Prepare Twilio API request with retry logic
     let attempt = 0;
     const maxAttempts = 3;
@@ -60,7 +68,7 @@ serve(async (req) => {
         const formData = new URLSearchParams();
         formData.append('To', toNumber);
         formData.append('From', fromNumber);
-        formData.append('Body', message);
+        formData.append('Body', finalMessage);
         if (mediaUrl) {
           formData.append('MediaUrl', mediaUrl);
         }
