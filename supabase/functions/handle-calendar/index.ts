@@ -99,16 +99,32 @@ serve(async (req) => {
       }
 
       case 'read': {
-        const { timeMin, timeMax, maxResults } = intent.entities;
+        const { timeMin, timeMax, maxResults, date } = intent.entities;
         
-        // Default to today's events
-        const now = new Date();
-        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
-        const endOfDay = new Date(now.setHours(23, 59, 59, 999));
+        let startTime: Date;
+        let endTime: Date;
+
+        // If a specific date is provided, use that
+        if (date) {
+          startTime = new Date(date);
+          startTime.setHours(0, 0, 0, 0);
+          endTime = new Date(date);
+          endTime.setHours(23, 59, 59, 999);
+        } else if (timeMin && timeMax) {
+          // Use explicit time range if provided
+          startTime = new Date(timeMin);
+          endTime = new Date(timeMax);
+        } else {
+          // Default to today's events
+          startTime = new Date();
+          startTime.setHours(0, 0, 0, 0);
+          endTime = new Date();
+          endTime.setHours(23, 59, 59, 999);
+        }
 
         const params = new URLSearchParams({
-          timeMin: (timeMin || startOfDay.toISOString()),
-          timeMax: (timeMax || endOfDay.toISOString()),
+          timeMin: startTime.toISOString(),
+          timeMax: endTime.toISOString(),
           maxResults: String(maxResults || 10),
           orderBy: 'startTime',
           singleEvents: 'true',
