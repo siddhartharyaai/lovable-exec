@@ -232,7 +232,12 @@ serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    const routingResult = JSON.parse(aiData.choices[0].message.content);
+    let content = aiData.choices[0].message.content;
+    
+    // Strip markdown code fences if present
+    content = content.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+    
+    const routingResult = JSON.parse(content);
 
     console.log(`[${traceId}] Routing result:`, JSON.stringify(routingResult, null, 2));
 
