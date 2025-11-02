@@ -34,11 +34,11 @@ serve(async (req) => {
 
     const audioBlob = await audioResponse.blob();
     
-    // Create form data for Whisper API
+    // Create form data for Lovable AI Whisper API
     const formData = new FormData();
     formData.append('file', audioBlob, 'audio.ogg');
     formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
+    formData.append('prompt', ''); // Lovable AI requires prompt parameter
 
     // Call Lovable AI Whisper endpoint
     const transcribeResponse = await fetch('https://ai.gateway.lovable.dev/v1/audio/transcriptions', {

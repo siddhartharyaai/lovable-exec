@@ -67,14 +67,37 @@ serve(async (req) => {
     // Handle audio transcription
     let messageBody = body;
     if (mediaUrl && messageType.startsWith('audio/')) {
-      console.log(`[${traceId}] Transcribing audio...`);
+      console.log(`[${traceId}] Transcribing audio from URL: ${mediaUrl}`);
       const transcribeResult = await supabase.functions.invoke('transcribe-audio', {
         body: { audioUrl: mediaUrl }
       });
       
+      console.log(`[${traceId}] Transcribe result:`, JSON.stringify(transcribeResult));
+      
+      if (transcribeResult.error) {
+        console.error(`[${traceId}] Transcription error:`, transcribeResult.error);
+        // Return error message to user
+        const errorReply = "Sorry, I couldn't transcribe your voice message. Please try sending it again or send a text message instead.";
+        await supabase.functions.invoke('send-whatsapp', {
+          body: { userId, message: errorReply, traceId }
+        });
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
       if (transcribeResult.data?.text) {
         messageBody = transcribeResult.data.text;
-        console.log(`[${traceId}] Transcription: ${messageBody.substring(0, 50)}...`);
+        console.log(`[${traceId}] Transcription successful: ${messageBody.substring(0, 100)}...`);
+      } else {
+        console.error(`[${traceId}] No transcription text in result`);
+        const errorReply = "Sorry, I couldn't understand your voice message. Please try again.";
+        await supabase.functions.invoke('send-whatsapp', {
+          body: { userId, message: errorReply, traceId }
+        });
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
     }
 
