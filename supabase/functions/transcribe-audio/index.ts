@@ -13,13 +13,23 @@ serve(async (req) => {
   try {
     const { audioUrl } = await req.json();
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
+    const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
 
     console.log('Transcribing audio from:', audioUrl);
 
-    // Download audio file
-    const audioResponse = await fetch(audioUrl);
+    // Download audio file from Twilio (requires authentication)
+    const authHeader = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+    const audioResponse = await fetch(audioUrl, {
+      headers: {
+        'Authorization': `Basic ${authHeader}`
+      }
+    });
+    
     if (!audioResponse.ok) {
-      throw new Error('Failed to download audio');
+      const errorText = await audioResponse.text();
+      console.error('Failed to download audio:', audioResponse.status, errorText);
+      throw new Error(`Failed to download audio: ${audioResponse.status}`);
     }
 
     const audioBlob = await audioResponse.blob();
