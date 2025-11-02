@@ -124,6 +124,7 @@ serve(async (req) => {
       // Search for the task across all lists
       let targetTask: any = null;
       let targetList: string = '';
+      const matchingTasks: any[] = [];
 
       if (taskId) {
         // If taskId provided, search for it
@@ -141,7 +142,9 @@ serve(async (req) => {
           }
         }
       } else if (taskTitle) {
-        // Search by title
+        // Search by title with intelligent fuzzy matching
+        console.log(`[${traceId}] Searching for task: "${taskTitle}"`);
+        
         for (const list of lists) {
           const tasksResponse = await fetch(
             `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks`,
@@ -150,22 +153,49 @@ serve(async (req) => {
             }
           );
           const tasksData = await tasksResponse.json();
-          const tasks = tasksData.items || [];
+          const tasks = (tasksData.items || []).filter((t: any) => t.status !== 'completed');
           
-          const match = tasks.find((t: any) => 
-            t.title.toLowerCase().includes(taskTitle.toLowerCase())
-          );
+          // Find all fuzzy matches
+          const matches = tasks.filter((t: any) => {
+            const taskLower = t.title.toLowerCase();
+            const searchLower = taskTitle.toLowerCase();
+            return taskLower.includes(searchLower) || searchLower.includes(taskLower);
+          });
           
-          if (match) {
-            targetTask = match;
-            targetList = list.id;
-            break;
-          }
+          matches.forEach((match: any) => {
+            matchingTasks.push({ task: match, listId: list.id, listName: list.title });
+          });
+        }
+        
+        console.log(`[${traceId}] Found ${matchingTasks.length} matching tasks`);
+        
+        if (matchingTasks.length === 1) {
+          targetTask = matchingTasks[0].task;
+          targetList = matchingTasks[0].listId;
+        } else if (matchingTasks.length > 1) {
+          // Multiple matches - ask for clarification
+          message = `📋 I found **${matchingTasks.length} matching tasks**. Which one did you mean?\n\n`;
+          matchingTasks.forEach((item: any, i: number) => {
+            message += `${i + 1}. **${item.task.title}**`;
+            if (item.task.due) {
+              const dueDate = new Date(item.task.due).toLocaleDateString('en-IN', { 
+                month: 'short', 
+                day: 'numeric' 
+              });
+              message += ` (due ${dueDate})`;
+            }
+            message += `\n   List: ${item.listName}\n\n`;
+          });
+          message += `Please reply with the exact task name to confirm which one to complete.`;
+          
+          return new Response(JSON.stringify({ message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
       }
 
       if (!targetTask || !targetList) {
-        message = `❌ Task "${taskTitle || taskId}" not found.`;
+        message = `❌ I couldn't find a task matching "${taskTitle || taskId}". \n\nTry:\n• "Show my tasks" to see what's on your list\n• Being more specific about the task name`;
       } else {
         // Mark task as completed
         const updateResponse = await fetch(
@@ -271,9 +301,12 @@ serve(async (req) => {
       const listData = await listResponse.json();
       const lists = listData.items || [];
 
-      // Search for the task across all lists
+      // Search for the task across all lists with intelligent matching
       let targetTask: any = null;
       let targetList: string = '';
+      const matchingTasks: any[] = [];
+      
+      console.log(`[${traceId}] Searching for task: "${taskTitle}"`);
 
       for (const list of lists) {
         const tasksResponse = await fetch(
@@ -283,21 +316,48 @@ serve(async (req) => {
           }
         );
         const tasksData = await tasksResponse.json();
-        const tasks = tasksData.items || [];
+        const tasks = (tasksData.items || []).filter((t: any) => t.status !== 'completed');
         
-        const match = tasks.find((t: any) => 
-          t.title.toLowerCase().includes(taskTitle.toLowerCase())
-        );
+        // Find all fuzzy matches
+        const matches = tasks.filter((t: any) => {
+          const taskLower = t.title.toLowerCase();
+          const searchLower = taskTitle.toLowerCase();
+          return taskLower.includes(searchLower) || searchLower.includes(taskLower);
+        });
         
-        if (match) {
-          targetTask = match;
-          targetList = list.id;
-          break;
-        }
+        matches.forEach((match: any) => {
+          matchingTasks.push({ task: match, listId: list.id, listName: list.title });
+        });
+      }
+      
+      console.log(`[${traceId}] Found ${matchingTasks.length} matching tasks`);
+      
+      if (matchingTasks.length === 1) {
+        targetTask = matchingTasks[0].task;
+        targetList = matchingTasks[0].listId;
+      } else if (matchingTasks.length > 1) {
+        // Multiple matches - ask for clarification
+        message = `📋 I found **${matchingTasks.length} matching tasks**. Which one did you mean?\n\n`;
+        matchingTasks.forEach((item: any, i: number) => {
+          message += `${i + 1}. **${item.task.title}**`;
+          if (item.task.due) {
+            const dueDate = new Date(item.task.due).toLocaleDateString('en-IN', { 
+              month: 'short', 
+              day: 'numeric' 
+            });
+            message += ` (due ${dueDate})`;
+          }
+          message += `\n   List: ${item.listName}\n\n`;
+        });
+        message += `Please specify which task to update more clearly.`;
+        
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       if (!targetTask || !targetList) {
-        message = `❌ Task "${taskTitle}" not found.`;
+        message = `❌ I couldn't find a task matching "${taskTitle}". \n\nTry:\n• "Show my tasks" to see what's on your list\n• Being more specific about the task name`;
       } else {
         // Update task
         const updateBody: any = {};
@@ -342,9 +402,12 @@ serve(async (req) => {
       const listData = await listResponse.json();
       const lists = listData.items || [];
 
-      // Search for the task across all lists
+      // Search for the task across all lists with intelligent matching
       let targetTask: any = null;
       let targetList: string = '';
+      const matchingTasks: any[] = [];
+      
+      console.log(`[${traceId}] Searching for task to delete: "${taskTitle}"`);
 
       for (const list of lists) {
         const tasksResponse = await fetch(
@@ -354,21 +417,48 @@ serve(async (req) => {
           }
         );
         const tasksData = await tasksResponse.json();
-        const tasks = tasksData.items || [];
+        const tasks = (tasksData.items || []).filter((t: any) => t.status !== 'completed');
         
-        const match = tasks.find((t: any) => 
-          t.title.toLowerCase().includes(taskTitle.toLowerCase())
-        );
+        // Find all fuzzy matches
+        const matches = tasks.filter((t: any) => {
+          const taskLower = t.title.toLowerCase();
+          const searchLower = taskTitle.toLowerCase();
+          return taskLower.includes(searchLower) || searchLower.includes(taskLower);
+        });
         
-        if (match) {
-          targetTask = match;
-          targetList = list.id;
-          break;
-        }
+        matches.forEach((match: any) => {
+          matchingTasks.push({ task: match, listId: list.id, listName: list.title });
+        });
+      }
+      
+      console.log(`[${traceId}] Found ${matchingTasks.length} matching tasks`);
+      
+      if (matchingTasks.length === 1) {
+        targetTask = matchingTasks[0].task;
+        targetList = matchingTasks[0].listId;
+      } else if (matchingTasks.length > 1) {
+        // Multiple matches - ask for clarification
+        message = `📋 I found **${matchingTasks.length} matching tasks**. Which one did you want to delete?\n\n`;
+        matchingTasks.forEach((item: any, i: number) => {
+          message += `${i + 1}. **${item.task.title}**`;
+          if (item.task.due) {
+            const dueDate = new Date(item.task.due).toLocaleDateString('en-IN', { 
+              month: 'short', 
+              day: 'numeric' 
+            });
+            message += ` (due ${dueDate})`;
+          }
+          message += `\n   List: ${item.listName}\n\n`;
+        });
+        message += `Please reply with the exact task name to confirm which one to delete.`;
+        
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       if (!targetTask || !targetList) {
-        message = `❌ Task "${taskTitle}" not found.`;
+        message = `❌ I couldn't find a task matching "${taskTitle}". \n\nTry:\n• "Show my tasks" to see what's on your list\n• Being more specific about the task name`;
       } else {
         // Delete task
         const deleteResponse = await fetch(
@@ -383,7 +473,7 @@ serve(async (req) => {
           throw new Error('Failed to delete task');
         }
 
-        message = `✅ Task deleted: "${targetTask.title}"`;
+        message = `🗑️ Task deleted: "${targetTask.title}"`;
       }
 
     } else {

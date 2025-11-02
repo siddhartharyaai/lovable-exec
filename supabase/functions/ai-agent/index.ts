@@ -102,17 +102,25 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_calendar_event",
-      description: "Update or reschedule an existing calendar event. Use when user says 'reschedule', 'move', 'change time', 'push back'. IMPORTANT: This modifies existing events, so confirm the event title carefully.",
+      description: "Update or reschedule an existing calendar event. Use when user says 'reschedule', 'move', 'change time', 'push back'. IMPORTANT: The handler can do intelligent fuzzy matching by date, person, or partial title. Extract ALL context from the user's query to help find the right event.",
       parameters: {
         type: "object",
         properties: {
           event_title: { 
             type: "string", 
-            description: "Title or partial title of the event to update. Be flexible with matching (e.g., 'standup' matches 'Daily Standup')" 
+            description: "Title or partial title of the event to update. Can be fuzzy (e.g., 'sync', 'meeting')" 
           },
           new_start_time: { 
             type: "string", 
             description: "New start time in ISO 8601 format (YYYY-MM-DDTHH:mm:ss+05:30)" 
+          },
+          date: {
+            type: "string",
+            description: "Current date of the event to help locate it (e.g., if user says 'reschedule tomorrow's meeting'). Parse time references like 'tomorrow', 'today', 'Monday'."
+          },
+          person: {
+            type: "string",
+            description: "Name of person associated with the event. Helps narrow down which event to update."
           }
         },
         required: ["event_title", "new_start_time"]
@@ -123,13 +131,21 @@ const TOOLS = [
     type: "function",
     function: {
       name: "delete_calendar_event",
-      description: "Delete a calendar event permanently. Use when user says 'cancel', 'delete', 'remove event'. IMPORTANT: This is destructive, so confirm the event title carefully before executing.",
+      description: "Delete a calendar event permanently. Use when user says 'cancel', 'delete', 'remove event'. IMPORTANT: This is destructive. The handler is smart enough to do fuzzy matching - it can find events by date, person, or partial title. You should extract ALL available context from the user's query.",
       parameters: {
         type: "object",
         properties: {
           event_title: { 
             type: "string", 
-            description: "Title or partial title of the event to delete. Be flexible with matching" 
+            description: "Title or partial title of the event (e.g., 'appointment', 'meeting', 'sync'). Can be fuzzy - the system will match intelligently" 
+          },
+          date: {
+            type: "string",
+            description: "Date to search for the event in ISO 8601 format. IMPORTANT: If user says 'tomorrow', 'today', 'next Monday', parse this and include it! This helps narrow down the search."
+          },
+          person: {
+            type: "string",
+            description: "Name of person associated with the event (e.g., 'Rohan', 'Priya'). The system will check both event titles and attendees. IMPORTANT: Extract this if user mentions any person!"
           }
         },
         required: ["event_title"]
@@ -423,7 +439,25 @@ You have deep integration with:
 ⚡ CRITICAL DECISION RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. **WEB SEARCH IS MANDATORY FOR:**
+1. **CONTEXT EXTRACTION IS MANDATORY:**
+   🚨 When user mentions "appointment with Rohan tomorrow" → Extract:
+      • event_title: "appointment" 
+      • person: "Rohan"
+      • date: [tomorrow's date in ISO format]
+   
+   🚨 When user says "delete the meeting tomorrow" → Extract:
+      • event_title: "meeting"
+      • date: [tomorrow's date]
+   
+   🚨 When user says "reschedule sync with Priya to 3pm" → Extract:
+      • event_title: "sync"
+      • person: "Priya"
+      • new_start_time: [3pm in ISO format]
+   
+   ⚠️ ALWAYS extract ALL context clues (dates, people, keywords) from user queries!
+   ⚠️ The backend uses intelligent fuzzy matching - give it as much context as possible!
+
+2. **WEB SEARCH IS MANDATORY FOR:**
    🚨 Sports scores, live matches, game results
    🚨 Weather forecasts and current conditions
    🚨 Stock prices, market data, financial news
@@ -433,7 +467,7 @@ You have deep integration with:
    
    ⚠️ NEVER try to answer these from memory - ALWAYS use search_web tool first!
 
-2. **TIME & TIMEZONE:**
+3. **TIME & TIMEZONE:**
    - Current time: ${new Date().toISOString()} (Asia/Kolkata timezone, UTC+5:30)
    - Default timezone: Asia/Kolkata (IST)
    - Parse natural language carefully:
@@ -444,17 +478,17 @@ You have deep integration with:
      * "in 2 hours" = current time + 2 hours
    - Always convert to ISO 8601 format: YYYY-MM-DDTHH:mm:ss+05:30
 
-3. **PROACTIVE TOOL USAGE:**
+4. **PROACTIVE TOOL USAGE:**
    - If user asks a question that requires data → Use the appropriate tool IMMEDIATELY
    - Multiple related actions? → Execute ALL relevant tools (e.g., if asked about schedule AND email, read calendar AND summarize emails)
    - Don't ask permission for read operations (calendar, tasks, email summaries)
    - DO ask for confirmation for destructive operations (delete, mark all read)
 
-4. **CONTACT LOOKUP WORKFLOW:**
+5. **CONTACT LOOKUP WORKFLOW:**
    - User mentions person by name for email/meeting? → Use lookup_contact first to get their email
    - Then use that email in create_calendar_event or create_email_draft
 
-5. **EMAIL DRAFT APPROVAL:**
+6. **EMAIL DRAFT APPROVAL:**
    - NEVER send emails directly
    - ALWAYS create a draft first
    - Present the draft to user for approval
@@ -746,7 +780,9 @@ serve(async (req) => {
                   intent: { 
                     entities: {
                       eventTitle: args.event_title,
-                      start: args.new_start_time
+                      start: args.new_start_time,
+                      date: args.date,
+                      person: args.person
                     },
                     tz: 'Asia/Kolkata'
                   }, 
@@ -762,7 +798,11 @@ serve(async (req) => {
               const deleteCalResult = await supabase.functions.invoke('handle-calendar', {
                 body: { 
                   intent: { 
-                    entities: { eventTitle: args.event_title },
+                    entities: { 
+                      eventTitle: args.event_title,
+                      date: args.date,
+                      person: args.person
+                    },
                     tz: 'Asia/Kolkata'
                   }, 
                   userId, 

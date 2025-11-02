@@ -241,25 +241,46 @@ serve(async (req) => {
       }
 
       case 'update': {
-        const { eventId, title, start, duration, eventTitle } = intent.entities;
+        const { eventId, title, start, duration, eventTitle, date, person } = intent.entities;
         
-        // If we have eventTitle but no eventId, search for the event
+        // If we have eventTitle but no eventId, search for the event intelligently
         let targetEventId = eventId;
+        let matchingEvents: any[] = [];
         
-        if (!targetEventId && eventTitle) {
-          console.log(`[${traceId}] Searching for event: ${eventTitle}`);
+        if (!targetEventId && (eventTitle || person || date)) {
+          console.log(`[${traceId}] Intelligent search for event to update - title: ${eventTitle}, person: ${person}, date: ${date}`);
           
-          // Search for events in the next 30 days
-          const searchStart = new Date();
-          const searchEnd = new Date();
-          searchEnd.setDate(searchEnd.getDate() + 30);
+          // Determine search time range
+          let searchStart: Date;
+          let searchEnd: Date;
+          
+          if (date) {
+            // If date is provided, search that specific day
+            searchStart = new Date(date);
+            searchStart.setHours(0, 0, 0, 0);
+            searchEnd = new Date(date);
+            searchEnd.setHours(23, 59, 59, 999);
+            console.log(`[${traceId}] Searching events on ${searchStart.toDateString()}`);
+          } else {
+            // Search next 30 days
+            searchStart = new Date();
+            searchEnd = new Date();
+            searchEnd.setDate(searchEnd.getDate() + 30);
+          }
           
           const searchParams = new URLSearchParams({
             timeMin: searchStart.toISOString(),
             timeMax: searchEnd.toISOString(),
-            q: eventTitle,
             singleEvents: 'true',
+            orderBy: 'startTime',
           });
+          
+          // Add search query if we have title or person
+          if (eventTitle) {
+            searchParams.append('q', eventTitle);
+          } else if (person) {
+            searchParams.append('q', person);
+          }
           
           const searchResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?${searchParams}`,
@@ -268,17 +289,81 @@ serve(async (req) => {
           
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
-            const matchingEvents = searchData.items || [];
+            let candidates = searchData.items || [];
             
-            if (matchingEvents.length > 0) {
+            console.log(`[${traceId}] Initial search found ${candidates.length} events`);
+            
+            // Smart filtering based on context
+            if (person) {
+              // Filter by person in title or attendees
+              candidates = candidates.filter((event: any) => {
+                const titleMatch = event.summary?.toLowerCase().includes(person.toLowerCase());
+                const attendeeMatch = event.attendees?.some((att: any) => 
+                  att.email?.toLowerCase().includes(person.toLowerCase()) ||
+                  att.displayName?.toLowerCase().includes(person.toLowerCase())
+                );
+                return titleMatch || attendeeMatch;
+              });
+              console.log(`[${traceId}] After person filter: ${candidates.length} events`);
+            }
+            
+            if (eventTitle) {
+              // Fuzzy match on title
+              const titleLower = eventTitle.toLowerCase();
+              candidates = candidates.filter((event: any) => {
+                const eventTitleLower = event.summary?.toLowerCase() || '';
+                return eventTitleLower.includes(titleLower) || titleLower.includes(eventTitleLower);
+              });
+              console.log(`[${traceId}] After title filter: ${candidates.length} events`);
+            }
+            
+            matchingEvents = candidates;
+            
+            if (matchingEvents.length === 1) {
               targetEventId = matchingEvents[0].id;
-              console.log(`[${traceId}] Found event ID: ${targetEventId}`);
+              console.log(`[${traceId}] Found exactly one match: ${matchingEvents[0].summary}`);
+            } else if (matchingEvents.length > 1) {
+              console.log(`[${traceId}] Found ${matchingEvents.length} matching events - need clarification`);
+              // Multiple matches - ask user to clarify
+              message = `📅 I found **${matchingEvents.length} matching events**. Which one would you like to update?\n\n`;
+              matchingEvents.forEach((event: any, i: number) => {
+                const start = new Date(event.start.dateTime || event.start.date);
+                const timeStr = event.start.dateTime 
+                  ? start.toLocaleString('en-IN', { 
+                      day: '2-digit',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                      timeZone: intent.tz || 'Asia/Kolkata'
+                    })
+                  : start.toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short'
+                    });
+                
+                message += `${i + 1}. **${event.summary}** - ${timeStr}\n`;
+                if (event.attendees?.length) {
+                  message += `   👥 With: ${event.attendees.map((a: any) => a.displayName || a.email).join(', ')}\n`;
+                }
+                message += '\n';
+              });
+              message += `Please specify which event to update more clearly.`;
+              
+              return new Response(JSON.stringify({ message }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
             }
           }
         }
         
         if (!targetEventId) {
-          message = "I couldn't find that event. Please be more specific about which event to update.";
+          const searchContext = [];
+          if (person) searchContext.push(`with "${person}"`);
+          if (eventTitle) searchContext.push(`titled "${eventTitle}"`);
+          if (date) searchContext.push(`on ${new Date(date).toLocaleDateString('en-IN')}`);
+          
+          message = `📅 I couldn't find any events ${searchContext.join(' ')}. \n\nTry:\n• "Show my calendar tomorrow" to see what events exist\n• Being more specific about the event time or title`;
           break;
         }
         
@@ -445,25 +530,46 @@ serve(async (req) => {
       }
 
       case 'delete': {
-        const { eventId, eventTitle } = intent.entities;
+        const { eventId, eventTitle, date, person } = intent.entities;
         
-        // If we have eventTitle but no eventId, search for the event
+        // If we have eventTitle but no eventId, search for the event intelligently
         let targetEventId = eventId;
+        let matchingEvents: any[] = [];
         
-        if (!targetEventId && eventTitle) {
-          console.log(`[${traceId}] Searching for event to delete: ${eventTitle}`);
+        if (!targetEventId && (eventTitle || person || date)) {
+          console.log(`[${traceId}] Intelligent search for event to delete - title: ${eventTitle}, person: ${person}, date: ${date}`);
           
-          // Search for events in the next 30 days
-          const searchStart = new Date();
-          const searchEnd = new Date();
-          searchEnd.setDate(searchEnd.getDate() + 30);
+          // Determine search time range
+          let searchStart: Date;
+          let searchEnd: Date;
+          
+          if (date) {
+            // If date is provided, search that specific day
+            searchStart = new Date(date);
+            searchStart.setHours(0, 0, 0, 0);
+            searchEnd = new Date(date);
+            searchEnd.setHours(23, 59, 59, 999);
+            console.log(`[${traceId}] Searching events on ${searchStart.toDateString()}`);
+          } else {
+            // Search next 30 days
+            searchStart = new Date();
+            searchEnd = new Date();
+            searchEnd.setDate(searchEnd.getDate() + 30);
+          }
           
           const searchParams = new URLSearchParams({
             timeMin: searchStart.toISOString(),
             timeMax: searchEnd.toISOString(),
-            q: eventTitle,
             singleEvents: 'true',
+            orderBy: 'startTime',
           });
+          
+          // Add search query if we have title or person
+          if (eventTitle) {
+            searchParams.append('q', eventTitle);
+          } else if (person) {
+            searchParams.append('q', person);
+          }
           
           const searchResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?${searchParams}`,
@@ -472,17 +578,81 @@ serve(async (req) => {
           
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
-            const matchingEvents = searchData.items || [];
+            let candidates = searchData.items || [];
             
-            if (matchingEvents.length > 0) {
+            console.log(`[${traceId}] Initial search found ${candidates.length} events`);
+            
+            // Smart filtering based on context
+            if (person) {
+              // Filter by person in title or attendees
+              candidates = candidates.filter((event: any) => {
+                const titleMatch = event.summary?.toLowerCase().includes(person.toLowerCase());
+                const attendeeMatch = event.attendees?.some((att: any) => 
+                  att.email?.toLowerCase().includes(person.toLowerCase()) ||
+                  att.displayName?.toLowerCase().includes(person.toLowerCase())
+                );
+                return titleMatch || attendeeMatch;
+              });
+              console.log(`[${traceId}] After person filter: ${candidates.length} events`);
+            }
+            
+            if (eventTitle) {
+              // Fuzzy match on title - check if title contains the search term or vice versa
+              const titleLower = eventTitle.toLowerCase();
+              candidates = candidates.filter((event: any) => {
+                const eventTitleLower = event.summary?.toLowerCase() || '';
+                return eventTitleLower.includes(titleLower) || titleLower.includes(eventTitleLower);
+              });
+              console.log(`[${traceId}] After title filter: ${candidates.length} events`);
+            }
+            
+            matchingEvents = candidates;
+            
+            if (matchingEvents.length === 1) {
               targetEventId = matchingEvents[0].id;
-              console.log(`[${traceId}] Found event ID to delete: ${targetEventId}`);
+              console.log(`[${traceId}] Found exactly one match: ${matchingEvents[0].summary}`);
+            } else if (matchingEvents.length > 1) {
+              console.log(`[${traceId}] Found ${matchingEvents.length} matching events - need clarification`);
+              // Multiple matches - ask user to clarify
+              message = `📅 I found **${matchingEvents.length} matching events**. Which one would you like to delete?\n\n`;
+              matchingEvents.forEach((event: any, i: number) => {
+                const start = new Date(event.start.dateTime || event.start.date);
+                const timeStr = event.start.dateTime 
+                  ? start.toLocaleString('en-IN', { 
+                      day: '2-digit',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                      timeZone: intent.tz || 'Asia/Kolkata'
+                    })
+                  : start.toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short'
+                    });
+                
+                message += `${i + 1}. **${event.summary}** - ${timeStr}\n`;
+                if (event.attendees?.length) {
+                  message += `   👥 With: ${event.attendees.map((a: any) => a.displayName || a.email).join(', ')}\n`;
+                }
+                message += '\n';
+              });
+              message += `Please reply with the event name or time to confirm which one to delete.`;
+              
+              return new Response(JSON.stringify({ message }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
             }
           }
         }
         
         if (!targetEventId) {
-          message = "I couldn't find that event. Please be more specific about which event to delete.";
+          const searchContext = [];
+          if (person) searchContext.push(`with "${person}"`);
+          if (eventTitle) searchContext.push(`titled "${eventTitle}"`);
+          if (date) searchContext.push(`on ${new Date(date).toLocaleDateString('en-IN')}`);
+          
+          message = `📅 I couldn't find any events ${searchContext.join(' ')}. \n\nTry:\n• "Show my calendar tomorrow" to see what events exist\n• Being more specific about the event time or title`;
           break;
         }
         
@@ -493,9 +663,16 @@ serve(async (req) => {
         );
         
         let eventName = eventTitle || 'event';
+        let eventTime = '';
         if (getResponse.ok) {
           const eventData = await getResponse.json();
           eventName = eventData.summary || eventName;
+          const start = new Date(eventData.start.dateTime || eventData.start.date);
+          eventTime = start.toLocaleString('en-IN', { 
+            dateStyle: 'medium',
+            timeStyle: 'short',
+            timeZone: intent.tz || 'Asia/Kolkata'
+          });
         }
         
         // Delete the event
@@ -513,7 +690,7 @@ serve(async (req) => {
           throw new Error('Failed to delete calendar event');
         }
         
-        message = `🗑️ Deleted: **${eventName}**`;
+        message = `🗑️ Deleted: **${eventName}**${eventTime ? ' (' + eventTime + ')' : ''}`;
         break;
       }
 
