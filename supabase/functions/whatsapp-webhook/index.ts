@@ -258,6 +258,66 @@ serve(async (req) => {
         }
         break;
         
+      case 'email_approve':
+      case 'email_cancel':
+        const draftId = intent.entities?.draftId;
+        if (!draftId) {
+          replyText = '⚠️ Please specify which draft to approve/cancel (e.g., "send abc12345")';
+          break;
+        }
+
+        // Find draft by ID prefix
+        const { data: drafts, error: draftError } = await supabase
+          .from('email_drafts')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('status', 'pending')
+          .ilike('id', `${draftId}%`)
+          .limit(1);
+
+        if (draftError || !drafts || drafts.length === 0) {
+          replyText = `❌ Draft "${draftId}" not found or already processed.`;
+          break;
+        }
+
+        const draft = drafts[0];
+
+        if (intent.type === 'email_cancel') {
+          // Cancel draft
+          await supabase
+            .from('email_drafts')
+            .update({ status: 'cancelled' })
+            .eq('id', draft.id);
+
+          replyText = '🗑️ Email draft cancelled.';
+        } else {
+          // Approve and send draft
+          const sendResult = await supabase.functions.invoke('handle-gmail', {
+            body: { 
+              intent: { 
+                type: draft.type === 'send' ? 'gmail_send_approved' : 'gmail_reply_approved',
+                entities: {
+                  draftId: draft.id,
+                  to: draft.to_email,
+                  subject: draft.subject,
+                  body: draft.body,
+                  messageId: draft.message_id
+                }
+              }, 
+              userId, 
+              traceId 
+            }
+          });
+
+          if (sendResult.error) {
+            replyText = '⚠️ Failed to send email. Please try again.';
+            console.error(`[${traceId}] Email send error:`, sendResult.error);
+          } else {
+            replyText = sendResult.data?.message || '✅ Email sent successfully!';
+          }
+        }
+        break;
+        
       case 'fallback':
       default:
         // Use AI to answer general knowledge questions

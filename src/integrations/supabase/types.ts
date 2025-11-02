@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      email_drafts: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          message_id: string | null
+          sent_at: string | null
+          status: string
+          subject: string | null
+          to_email: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          subject?: string | null
+          to_email?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          message_id?: string | null
+          sent_at?: string | null
+          status?: string
+          subject?: string | null
+          to_email?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_drafts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       logs: {
         Row: {
           created_at: string

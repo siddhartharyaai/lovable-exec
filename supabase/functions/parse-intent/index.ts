@@ -21,6 +21,8 @@ SUPPORTED INTENTS:
 - gmail_reply: Reply to an email (requires: messageId, body - will show draft for approval)
 - web_search: Search the web (entities: query, type optional: "general" or "specific")
 - image_generation: Generate an image (entities: prompt)
+- email_approve: Approve email draft (entities: draftId)
+- email_cancel: Cancel email draft (entities: draftId)
 - fallback: General conversation
 
 ENTITY NORMALIZATION:
@@ -112,6 +114,13 @@ Response: {"type":"image_generation","entities":{"prompt":"sunset over mountains
 
 User: "Create a picture of a futuristic city"
 Response: {"type":"image_generation","entities":{"prompt":"futuristic city"},"confidence":0.95}
+
+EMAIL APPROVAL:
+User: "send abc12345"
+Response: {"type":"email_approve","entities":{"draftId":"abc12345"},"confidence":0.95}
+
+User: "cancel def67890"
+Response: {"type":"email_cancel","entities":{"draftId":"def67890"},"confidence":0.95}
 
 FALLBACK:
 User: "How are you?"

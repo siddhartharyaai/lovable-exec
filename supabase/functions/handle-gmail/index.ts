@@ -180,17 +180,105 @@ CRITICAL: Maximum 2 lines per email. Keep total under 1000 characters.`
       } else {
         message = 'Marking specific emails as read - not yet implemented';
       }
+    } else if (intent.type === 'gmail_send_approved' || intent.type === 'gmail_reply_approved') {
+      // Send approved draft
+      const { draftId, to, subject, body, messageId } = intent.entities;
+      
+      if (intent.type === 'gmail_send_approved') {
+        // Send new email
+        const sendResponse = await fetch(
+          'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: btoa(
+                `To: ${to}\r\n` +
+                `Subject: ${subject}\r\n` +
+                `Content-Type: text/plain; charset=utf-8\r\n\r\n` +
+                body
+              )
+            }),
+          }
+        );
+
+        if (!sendResponse.ok) {
+          throw new Error('Failed to send email');
+        }
+
+        // Update draft status
+        await supabase
+          .from('email_drafts')
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .eq('id', draftId);
+
+        message = `✅ Email sent to ${to}!`;
+      } else {
+        // Reply to existing email
+        const replyResponse = await fetch(
+          'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: btoa(
+                `In-Reply-To: ${messageId}\r\n` +
+                `References: ${messageId}\r\n` +
+                `Content-Type: text/plain; charset=utf-8\r\n\r\n` +
+                body
+              ),
+              threadId: messageId
+            }),
+          }
+        );
+
+        if (!replyResponse.ok) {
+          throw new Error('Failed to send reply');
+        }
+
+        // Update draft status
+        await supabase
+          .from('email_drafts')
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .eq('id', draftId);
+
+        message = `✅ Reply sent!`;
+      }
     } else if (intent.type === 'gmail_send' || intent.type === 'gmail_reply') {
-      // Draft approval workflow
+      // Draft approval workflow - store draft in database
       const { to, subject, body, messageId } = intent.entities;
       
-      message = `📧 **Email Draft**\n\n`;
+      // Create draft in database
+      const draftType = intent.type === 'gmail_send' ? 'send' : 'reply';
+      const { data: draft, error: draftError } = await supabase
+        .from('email_drafts')
+        .insert({
+          user_id: userId,
+          type: draftType,
+          to_email: to,
+          subject: subject,
+          body: body,
+          message_id: messageId,
+          status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (draftError || !draft) {
+        throw new Error('Failed to create email draft');
+      }
+
+      message = `📧 **Email Draft Created**\n\n`;
       if (to) message += `**To:** ${to}\n`;
       if (subject) message += `**Subject:** ${subject}\n`;
       message += `\n${body}\n\n`;
-      message += `---\n\n⚠️ *Draft approval required* - Reply "send it" to send this email, or "cancel" to discard.`;
-      
-      // TODO: Store draft in DB with pending status and userId for approval flow
+      message += `---\n\n⚠️ Reply "send ${draft.id.substring(0, 8)}" to send this email, or "cancel ${draft.id.substring(0, 8)}" to discard.`;
     } else {
       message = 'Gmail action not yet implemented';
     }
