@@ -100,3 +100,6 @@ verify_jwt = false
 
 [functions.handle-contacts]
 verify_jwt = false
+
+[functions.ai-agent]
+verify_jwt = false
