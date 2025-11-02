@@ -89,14 +89,31 @@ const INTENT_SCHEMAS: Record<string, any> = {
 
 const ROUTER_SYSTEM_PROMPT = `You are a fast intent classifier for an executive assistant. Your job is to analyze the user's message and extract structured information about their intent.
 
-CRITICAL SLOT EXTRACTION RULES:
-1. Person names: Extract ONLY the name (e.g., "Rohan" NOT "meeting with Rohan" or "appointment with Rohan")
-2. Dates: Convert relative dates to ISO format (e.g., "tomorrow" → "2025-11-03", "next week" → "2025-11-09")
-3. Event titles: ONLY extract if user specifies a SPECIFIC title. Do NOT use generic words like "meeting", "appointment", "call", "sync"
-4. For calendar operations with a person: If user says "meeting with X" or "appointment with X", extract person="X" and leave event_title empty
+CRITICAL: You MUST extract slots from the user's message. Always populate the slots object with any information you find.
+
+SLOT EXTRACTION RULES (MANDATORY):
+1. Person names: Extract ONLY the name itself
+   - "meeting with Rohan" → person: "Rohan"
+   - "appointment with Sarah" → person: "Sarah"
+   - "call with John tomorrow" → person: "John"
+
+2. Dates: Convert relative dates to ISO format (YYYY-MM-DD)
+   - "tomorrow" → "2025-11-03"
+   - "today" → "2025-11-02"
+   - "next Monday" → calculate the date
+   - "November 5th" → "2025-11-05"
+
+3. Event titles: Extract ONLY if user provides a SPECIFIC custom title
+   - "project review meeting" → event_title: "project review meeting"
+   - "standup" → event_title: "standup"
+   - Generic words like "meeting", "appointment", "call" → DO NOT extract as event_title
+
+4. Times: Extract and convert to 24-hour format
+   - "3pm" → time: "15:00"
+   - "at 2:30" → time: "14:30"
 
 INTENT DETECTION:
-- delete_calendar_event: "delete", "cancel", "remove" + any mention of calendar/meeting/appointment
+- delete_calendar_event: "delete", "cancel", "remove" + calendar/meeting/appointment
 - schedule_meeting: "schedule", "set", "book" + meeting/call/time
 - update_calendar_event: "move", "reschedule", "change time"
 - email_search: "find email", "search inbox"
@@ -107,12 +124,23 @@ INTENT DETECTION:
 - web_search: "search for", "what is", "find information"
 - reminder_create: "remind me", "set reminder"
 
+EXAMPLES:
+Message: "delete my meeting with Rohan tomorrow"
+→ slots: { person: "Rohan", date: "2025-11-03" }
+
+Message: "cancel the standup on Friday"
+→ slots: { event_title: "standup", date: "2025-11-07" }
+
+Message: "remove tomorrow's appointment with Sarah"
+→ slots: { person: "Sarah", date: "2025-11-03" }
+
 DECISION LOGIC:
-- ACT: All critical slots present (for delete_calendar_event: person OR event_title, plus date)
+- ACT: All critical slots present
+  - delete_calendar_event needs: date AND (person OR event_title)
 - ASK: Missing critical slots OR confidence < 0.75
 - ANSWER: Conversational (greetings, thanks, questions)
 
-Current date/time: ${new Date().toISOString().split('T')[0]} (for relative date calculations)`;
+Current date: ${new Date().toISOString().split('T')[0]}`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -150,12 +178,12 @@ serve(async (req) => {
       });
     }
 
-    // Define tool for structured output
+    // Define tool for structured output with explicit slot fields
     const routingTool = {
       type: "function",
       function: {
         name: "classify_intent",
-        description: "Classify user intent and extract slots",
+        description: "Classify user intent and extract ALL slots from the message. You MUST populate the slots object with any relevant information.",
         parameters: {
           type: "object",
           properties: {
@@ -174,7 +202,61 @@ serve(async (req) => {
             },
             slots: {
               type: "object",
-              description: "Extracted slot values (person, date, event_title, etc.)"
+              description: "MANDATORY: Extract and populate ALL relevant slots",
+              properties: {
+                person: {
+                  type: "string",
+                  description: "Person's name if mentioned (e.g., 'Rohan', 'Sarah')"
+                },
+                date: {
+                  type: "string",
+                  description: "Date in YYYY-MM-DD format (convert relative dates like 'tomorrow')"
+                },
+                event_title: {
+                  type: "string",
+                  description: "Specific event title if provided (not generic words like 'meeting')"
+                },
+                time: {
+                  type: "string",
+                  description: "Time in HH:MM format"
+                },
+                duration: {
+                  type: "number",
+                  description: "Duration in minutes"
+                },
+                new_date: {
+                  type: "string",
+                  description: "New date for rescheduling in YYYY-MM-DD format"
+                },
+                new_time: {
+                  type: "string",
+                  description: "New time for rescheduling in HH:MM format"
+                },
+                query: {
+                  type: "string",
+                  description: "Search query or text"
+                },
+                recipient: {
+                  type: "string",
+                  description: "Email recipient"
+                },
+                title: {
+                  type: "string",
+                  description: "Task title"
+                },
+                task_identifier: {
+                  type: "string",
+                  description: "Task identifier"
+                },
+                text: {
+                  type: "string",
+                  description: "Reminder text"
+                },
+                due_time: {
+                  type: "string",
+                  description: "Due time for reminder"
+                }
+              }
             },
             missing_critical_slots: {
               type: "array",
@@ -191,7 +273,7 @@ serve(async (req) => {
               description: "Options for user to choose from"
             }
           },
-          required: ["decision", "confidence"]
+          required: ["decision", "confidence", "slots"]
         }
       }
     };
