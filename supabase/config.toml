@@ -64,3 +64,12 @@ verify_jwt = false
 
 [functions.handle-reminder]
 verify_jwt = false
+
+[functions.auth-google]
+verify_jwt = false
+
+[functions.auth-google-callback]
+verify_jwt = false
+
+[functions.refresh-google-token]
+verify_jwt = false
