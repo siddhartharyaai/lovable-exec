@@ -147,43 +147,29 @@ const Dashboard = () => {
         </Card>
 
         {/* Quick Actions */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="p-4 hover:bg-accent/5 transition-all cursor-pointer">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card 
+            className="p-4 hover:bg-accent/5 transition-all cursor-pointer"
+            onClick={() => navigate('/settings')}
+          >
             <div className="flex items-center gap-3">
               <Settings className="w-5 h-5 text-primary" />
               <div>
-                <h3 className="font-semibold text-sm">Settings</h3>
-                <p className="text-xs text-muted-foreground">Configure app</p>
+                <h3 className="font-semibold text-sm">Manage Connections</h3>
+                <p className="text-xs text-muted-foreground">Configure services</p>
               </div>
             </div>
           </Card>
 
-          <Card className="p-4 hover:bg-accent/5 transition-all cursor-pointer">
-            <div className="flex items-center gap-3">
-              <MessageSquare className="w-5 h-5 text-accent" />
-              <div>
-                <h3 className="font-semibold text-sm">WhatsApp Setup</h3>
-                <p className="text-xs text-muted-foreground">Connect messaging</p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4 hover:bg-accent/5 transition-all cursor-pointer">
-            <div className="flex items-center gap-3">
-              <Calendar className="w-5 h-5 text-success" />
-              <div>
-                <h3 className="font-semibold text-sm">Calendar Sync</h3>
-                <p className="text-xs text-muted-foreground">Link Google Cal</p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4 hover:bg-accent/5 transition-all cursor-pointer" onClick={() => navigate('/privacy')}>
+          <Card 
+            className="p-4 hover:bg-accent/5 transition-all cursor-pointer" 
+            onClick={() => navigate('/privacy')}
+          >
             <div className="flex items-center gap-3">
               <Settings className="w-5 h-5 text-muted-foreground" />
               <div>
-                <h3 className="font-semibold text-sm">Privacy</h3>
-                <p className="text-xs text-muted-foreground">Your data control</p>
+                <h3 className="font-semibold text-sm">Privacy & Data</h3>
+                <p className="text-xs text-muted-foreground">Control your data</p>
               </div>
             </div>
           </Card>

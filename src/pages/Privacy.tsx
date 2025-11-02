@@ -1,10 +1,12 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Download, Trash2, Shield } from "lucide-react";
+import { AlertTriangle, Download, Trash2, Shield, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const Privacy = () => {
+  const navigate = useNavigate();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleExport = () => {
@@ -23,8 +25,16 @@ const Privacy = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <div className="container max-w-4xl mx-auto px-4 py-12">
-        {/* Header */}
+        {/* Header with Back Button */}
         <div className="mb-8">
+          <Button
+            variant="ghost"
+            className="mb-4"
+            onClick={() => navigate('/dashboard')}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Dashboard
+          </Button>
           <div className="flex items-center gap-3 mb-4">
             <Shield className="w-10 h-10 text-primary" />
             <h1 className="text-4xl font-bold text-foreground">Privacy & Data Control</h1>
