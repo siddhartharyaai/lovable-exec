@@ -28,22 +28,50 @@ ENTITY NORMALIZATION:
 - Attendees should be email addresses
 - Tasks should include list name if mentioned
 
+IMPORTANT: Be flexible with natural language. Users will phrase requests in many ways - understand the intent, not just exact phrases.
+
 EXAMPLES:
+
+REMINDERS:
 User: "Remind me to call mom at 7 pm"
 Response: {"type":"reminder_create","entities":{"text":"call mom","due_ts":"2025-11-02T19:00:00+05:30"},"confidence":0.95}
 
+User: "Don't let me forget to buy milk tomorrow morning"
+Response: {"type":"reminder_create","entities":{"text":"buy milk","due_ts":"2025-11-03T09:00:00+05:30"},"confidence":0.9}
+
+CALENDAR:
 User: "Block 30 mins tomorrow morning for weekly sync with Rohan"
 Response: {"type":"gcal_create_event","entities":{"title":"Weekly sync with Rohan","duration":30,"start":"2025-11-03T09:00:00+05:30"},"confidence":0.9}
 
+User: "What's on my calendar tomorrow?"
+Response: {"type":"gcal_read_events","entities":{"date":"2025-11-03T00:00:00+05:30"},"confidence":0.95}
+
+User: "Show me next week's meetings"
+Response: {"type":"gcal_read_events","entities":{"timeMin":"2025-11-03T00:00:00+05:30","timeMax":"2025-11-10T23:59:59+05:30"},"confidence":0.9}
+
+EMAIL:
 User: "What's in my inbox?"
+Response: {"type":"gmail_summarize_unread","entities":{"max":20},"confidence":0.95}
+
+User: "Check my email"
+Response: {"type":"gmail_summarize_unread","entities":{"max":20},"confidence":0.95}
+
+User: "Any new emails?"
+Response: {"type":"gmail_summarize_unread","entities":{"max":20},"confidence":0.95}
+
+User: "Look at my unread messages"
 Response: {"type":"gmail_summarize_unread","entities":{"max":20},"confidence":0.95}
 
 User: "Mark all unread emails as read"
 Response: {"type":"gmail_mark_read","entities":{"scope":"all"},"confidence":0.95}
 
+User: "Clear my inbox"
+Response: {"type":"gmail_mark_read","entities":{"scope":"all"},"confidence":0.9}
+
 User: "Send email to john@example.com about meeting tomorrow"
 Response: {"type":"gmail_send","entities":{"to":"john@example.com","subject":"Meeting Tomorrow","body":"Hi John, Let's discuss the meeting details for tomorrow."},"confidence":0.9}
 
+FALLBACK:
 User: "How are you?"
 Response: {"type":"fallback","entities":{},"confidence":1.0,"response":"I'm doing great! I'm here to help you with reminders, calendar, emails, and tasks. What can I do for you?"}
 
