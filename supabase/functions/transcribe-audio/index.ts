@@ -12,7 +12,7 @@ serve(async (req) => {
 
   try {
     const { audioUrl } = await req.json();
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const deepgramApiKey = Deno.env.get('DEEPGRAM_API_KEY');
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
 
@@ -32,31 +32,26 @@ serve(async (req) => {
       throw new Error(`Failed to download audio: ${audioResponse.status}`);
     }
 
-    const audioBlob = await audioResponse.blob();
+    const audioBuffer = await audioResponse.arrayBuffer();
     
-    // Create form data for Lovable AI Whisper API
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'audio.ogg');
-    formData.append('model', 'whisper-1');
-    formData.append('prompt', ''); // Lovable AI requires prompt parameter
-
-    // Call Lovable AI Whisper endpoint
-    const transcribeResponse = await fetch('https://ai.gateway.lovable.dev/v1/audio/transcriptions', {
+    // Call Deepgram API with Nova 3 model for pre-recorded transcription
+    const transcribeResponse = await fetch('https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'Authorization': `Token ${deepgramApiKey}`,
+        'Content-Type': 'audio/ogg',
       },
-      body: formData,
+      body: audioBuffer,
     });
 
     if (!transcribeResponse.ok) {
       const errorText = await transcribeResponse.text();
-      console.error('Whisper API error:', transcribeResponse.status, errorText);
-      throw new Error(`Whisper API error: ${transcribeResponse.status}`);
+      console.error('Deepgram API error:', transcribeResponse.status, errorText);
+      throw new Error(`Deepgram API error: ${transcribeResponse.status}`);
     }
 
     const transcribeData = await transcribeResponse.json();
-    const text = transcribeData.text || '';
+    const text = transcribeData.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
 
     console.log('Transcription result:', text);
 
