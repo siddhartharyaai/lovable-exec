@@ -73,3 +73,12 @@ verify_jwt = false
 
 [functions.refresh-google-token]
 verify_jwt = false
+
+[functions.handle-calendar]
+verify_jwt = false
+
+[functions.handle-gmail]
+verify_jwt = false
+
+[functions.check-due-reminders]
+verify_jwt = false
