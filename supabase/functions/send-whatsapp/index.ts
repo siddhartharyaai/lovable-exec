@@ -42,7 +42,11 @@ serve(async (req) => {
     }
 
     const toNumber = `whatsapp:${user.phone}`;
-    console.log(`[${traceId}] Sending WhatsApp to ${toNumber}`);
+    // Ensure From number has whatsapp: prefix
+    const fromNumber = twilioWhatsAppNumber.startsWith('whatsapp:') 
+      ? twilioWhatsAppNumber 
+      : `whatsapp:${twilioWhatsAppNumber}`;
+    console.log(`[${traceId}] Sending WhatsApp to ${toNumber} from ${fromNumber}`);
 
     // Prepare Twilio API request with retry logic
     let attempt = 0;
@@ -55,7 +59,7 @@ serve(async (req) => {
       try {
         const formData = new URLSearchParams();
         formData.append('To', toNumber);
-        formData.append('From', twilioWhatsAppNumber);
+        formData.append('From', fromNumber);
         formData.append('Body', message);
         if (mediaUrl) {
           formData.append('MediaUrl', mediaUrl);
