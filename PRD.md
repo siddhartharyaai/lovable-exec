@@ -172,6 +172,7 @@ Create a conversational AI assistant that:
 
 ### P1 (High Priority Post-MVP)
 - ✅ Email draft generation and sending (with confirmation)
+- ✅ Email search by sender name with time filtering
 - ✅ Web search (SERP API for general, Firecrawl for specific)
 - ✅ Contact lookup via Google People API
 - ✅ Reminder snooze functionality

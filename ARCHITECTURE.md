@@ -111,6 +111,7 @@ type Intent =
   | { type: 'gtask_delete_task', entities: { task_title: string } }
   | { type: 'gtask_complete_task', entities: { task_title: string } }
   | { type: 'gmail_summarize_unread', entities: { max?: number } }
+  | { type: 'gmail_search', entities: { sender: string, daysBack?: number, maxResults?: number } }
   | { type: 'gmail_mark_read', entities: { scope: 'all' } }
   | { type: 'gmail_send', entities: { to: string, subject: string, body: string } }
   | { type: 'gmail_reply', entities: { to: string, subject: string, body: string, messageId: string } }
@@ -147,6 +148,7 @@ send_whatsapp(user.phone, response.body)
 
 #### Email Handler
 - Summarize: Fetch unread → AI summarize top N → send digest
+- Search: Query by sender name and time range → fetch message content → AI summarize
 - Draft: AI generate reply → show preview → ask "Send?" → execute on confirmation
 
 ### 2.4 Google Services Layer

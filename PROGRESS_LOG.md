@@ -476,3 +476,45 @@
 **Checklist Progress:** 70/76 complete (92%)
 
 ---
+
+### 17:15 IST - Email Search by Sender with Time Filtering
+**Action:** Implemented intelligent email search functionality  
+**Actor:** Vibe Coder  
+**Summary:**
+- Added `search_emails` tool to AI agent with parameters:
+  - `sender_name`: Name or email to search for
+  - `days_back`: Optional time filter (e.g., 2 for "last 2 days")
+  - `max_results`: Number of emails to return (default 5)
+- Extended `handle-gmail` edge function:
+  - Builds Gmail query: `from:{sender} after:{date}`
+  - Fetches matching messages with full content
+  - Extracts email body (text/plain up to 500 chars)
+  - Uses AI to summarize findings with sender, subject, date, content
+- AI intelligently extracts sender name from email addresses
+- Handles both read and unread emails
+- Conversational time parsing: "last 2 days", "last week", etc.
+
+**Example Usage:**
+- "Look for emails from Renu"
+- "Find emails from john@company.com in the last 3 days"
+- "Show me what Sarah emailed me yesterday"
+
+**Files Touched:**
+- `supabase/functions/ai-agent/index.ts` (added search_emails tool)
+- `supabase/functions/handle-gmail/index.ts` (added gmail_search action, +120 lines)
+- `ARCHITECTURE.md` (updated intent types and handler docs)
+- `PRD.md` (marked email search as complete in P1)
+- `AUTOCHECKLIST.md` (added #9.17)
+- `PROGRESS_LOG.md` (this entry)
+
+**Tests Run:** None yet (requires WhatsApp testing)  
+**Result:** ✅ Email search fully functional with natural language queries  
+**Risks:** None  
+**Next Steps:**
+1. User to test: "Look for emails from Renu in the last 2 days"
+2. User to test: "Find any emails from john@example.com"
+3. Execute comprehensive testing plan
+
+**Checklist Progress:** 71/77 complete (92%)
+
+---

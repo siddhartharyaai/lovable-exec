@@ -130,6 +130,22 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "search_emails",
+      description: "Search for emails by sender name or email address, with optional time filtering. Use when user asks to find specific emails from someone.",
+      parameters: {
+        type: "object",
+        properties: {
+          sender_name: { type: "string", description: "Name or email of the sender to search for" },
+          days_back: { type: "number", description: "How many days back to search (optional, e.g., 2 for 'last 2 days')" },
+          max_results: { type: "number", description: "Maximum number of emails to return (default 5)" }
+        },
+        required: ["sender_name"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "mark_emails_read",
       description: "Mark all unread emails as read",
       parameters: {
@@ -498,6 +514,24 @@ serve(async (req) => {
                 }
               });
               result = emailResult.data?.message || 'No unread emails';
+              break;
+
+            case 'search_emails':
+              const searchEmailResult = await supabase.functions.invoke('handle-gmail', {
+                body: { 
+                  intent: { 
+                    type: 'gmail_search',
+                    entities: {
+                      sender: args.sender_name,
+                      daysBack: args.days_back,
+                      maxResults: args.max_results || 5
+                    } 
+                  }, 
+                  userId, 
+                  traceId 
+                }
+              });
+              result = searchEmailResult.data?.message || 'No emails found from that sender';
               break;
 
             case 'mark_emails_read':

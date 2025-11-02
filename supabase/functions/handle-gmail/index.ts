@@ -180,6 +180,126 @@ CRITICAL: Maximum 2 lines per email. Keep total under 1000 characters.`
       } else {
         message = 'Marking specific emails as read - not yet implemented';
       }
+
+    } else if (intent.type === 'gmail_search') {
+      const { sender, daysBack, maxResults } = intent.entities;
+      
+      // Build Gmail query
+      let query = `from:${sender}`;
+      
+      // Add date filter if specified
+      if (daysBack) {
+        const dateThreshold = new Date();
+        dateThreshold.setDate(dateThreshold.getDate() - daysBack);
+        const formattedDate = dateThreshold.toISOString().split('T')[0].replace(/-/g, '/');
+        query += ` after:${formattedDate}`;
+      }
+      
+      // Fetch matching messages
+      const response = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults || 5}`,
+        {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to search Gmail');
+      }
+
+      const data = await response.json();
+      const messages = data.messages || [];
+
+      if (messages.length === 0) {
+        const timeInfo = daysBack ? ` in the last ${daysBack} day(s)` : '';
+        message = `📧 No emails found from "${sender}"${timeInfo}.`;
+      } else {
+        // Fetch full details for each message
+        const messageDetails = await Promise.all(
+          messages.map(async (msg: any) => {
+            const detailResponse = await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+              { headers: { 'Authorization': `Bearer ${accessToken}` } }
+            );
+            return detailResponse.json();
+          })
+        );
+
+        // Extract email info and body preview
+        const emailSummaries = messageDetails.map((msg: any) => {
+          const headers = msg.payload.headers;
+          const from = headers.find((h: any) => h.name === 'From')?.value || 'Unknown';
+          const subject = headers.find((h: any) => h.name === 'Subject')?.value || 'No subject';
+          const date = headers.find((h: any) => h.name === 'Date')?.value || '';
+          
+          // Extract body (simplified - handles text/plain)
+          let body = '';
+          if (msg.payload.body?.data) {
+            body = atob(msg.payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+          } else if (msg.payload.parts) {
+            const textPart = msg.payload.parts.find((p: any) => p.mimeType === 'text/plain');
+            if (textPart?.body?.data) {
+              body = atob(textPart.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+            }
+          }
+          
+          return {
+            from,
+            subject,
+            date,
+            body: body.substring(0, 500) // First 500 chars
+          };
+        });
+
+        // Use AI to summarize the findings
+        const emailList = emailSummaries.map((e, i) => 
+          `Email ${i + 1}:\nFrom: ${e.from}\nSubject: ${e.subject}\nDate: ${e.date}\nContent preview: ${e.body}`
+        ).join('\n\n---\n\n');
+
+        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [
+              { 
+                role: 'system', 
+                content: `You are an email assistant. Summarize emails clearly and concisely. For each email:
+- Identify the sender name (extract from email address if needed)
+- Summarize the key content in 2-3 sentences
+- Note any action items or important dates
+
+Format as:
+📧 **Email from [Name]** ([Date])
+**Subject:** [subject]
+[2-3 sentence summary]
+
+Keep total response under 1200 characters.` 
+              },
+              { 
+                role: 'user', 
+                content: `User is looking for emails from "${sender}"${daysBack ? ` in the last ${daysBack} day(s)` : ''}. Here are the ${messages.length} email(s) found:\n\n${emailList}\n\nSummarize each email clearly.` 
+              }
+            ],
+            temperature: 0.5,
+            max_tokens: 500,
+          }),
+        });
+
+        if (!aiResponse.ok) {
+          throw new Error('AI summarization failed');
+        }
+
+        const aiData = await aiResponse.json();
+        const summary = aiData.choices[0].message.content;
+
+        const timeInfo = daysBack ? ` (last ${daysBack} day${daysBack > 1 ? 's' : ''})` : '';
+        message = `📧 **Found ${messages.length} email${messages.length > 1 ? 's' : ''} from "${sender}"${timeInfo}**\n\n${summary}`;
+      }
+
     } else if (intent.type === 'gmail_send_approved' || intent.type === 'gmail_reply_approved') {
       // Send approved draft
       const { draftId, to, subject, body, messageId } = intent.entities;
