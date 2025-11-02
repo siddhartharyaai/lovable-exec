@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
@@ -15,6 +16,8 @@ const Settings = () => {
   const [birthdayReminders, setBirthdayReminders] = useState(true);
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(true);
+  const [phoneNumber, setPhoneNumber] = useState("+919821230311");
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
     checkGoogleConnection();
@@ -45,17 +48,38 @@ const Settings = () => {
   }, []);
 
   const checkGoogleConnection = async () => {
+    if (!phoneNumber) {
+      setIsLoadingGoogle(false);
+      return;
+    }
+    
     try {
-      // Check oauth_tokens table for any Google connection (not user-specific for testing)
-      const { data, error } = await supabase
-        .from('oauth_tokens')
-        .select('id')
-        .eq('provider', 'google')
-        .limit(1)
+      // Check if this specific phone number has Google connected
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('phone', phoneNumber)
         .maybeSingle();
       
-      setIsGoogleConnected(!!data && !error);
-      console.log('Google connection status:', !!data && !error);
+      if (!userData) {
+        setIsGoogleConnected(false);
+        setIsLoadingGoogle(false);
+        return;
+      }
+
+      if (userData.email) {
+        setUserEmail(userData.email);
+      }
+
+      const { data: tokenData } = await supabase
+        .from('oauth_tokens')
+        .select('id')
+        .eq('user_id', userData.id)
+        .eq('provider', 'google')
+        .maybeSingle();
+      
+      setIsGoogleConnected(!!tokenData);
+      console.log('Google connection status for', phoneNumber, ':', !!tokenData);
     } catch (err) {
       console.error('Error checking Google connection:', err);
       setIsGoogleConnected(false);
@@ -65,18 +89,31 @@ const Settings = () => {
   };
 
   const handleConnectGoogle = async () => {
+    if (!phoneNumber) {
+      toast({
+        title: "Phone number required",
+        description: "Please enter your WhatsApp phone number",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      // Create a test user for OAuth (phone-based identification)
-      const phone = `+91${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+      // Upsert user by phone number
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .insert({ phone })
+        .upsert(
+          { phone: phoneNumber, updated_at: new Date().toISOString() },
+          { onConflict: 'phone' }
+        )
         .select()
         .single();
 
       if (userError || !userData) {
-        throw new Error('Failed to create user');
+        throw new Error('Failed to create/find user');
       }
+
+      console.log('Using user ID:', userData.id, 'for phone:', phoneNumber);
 
       const redirectUrl = window.location.href.split('?')[0];
       const { data, error } = await supabase.functions.invoke('auth-google', {
@@ -86,6 +123,10 @@ const Settings = () => {
       if (error) throw error;
       
       if (data?.authUrl) {
+        toast({
+          title: "Redirecting to Google",
+          description: "Please sign in with your Google account",
+        });
         window.location.href = data.authUrl;
       }
     } catch (error) {
@@ -141,38 +182,58 @@ const Settings = () => {
             </div>
 
             {/* Google Workspace Status */}
-            <div className={`flex items-center justify-between p-4 border rounded-lg ${
-              isGoogleConnected ? 'border-success/20 bg-success/5' : 'border-border'
-            }`}>
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${
-                  isGoogleConnected ? 'bg-success/10' : 'bg-warning/10'
-                }`}>
-                  {isGoogleConnected ? (
-                    <CheckCircle2 className="w-5 h-5 text-success" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-warning" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-semibold">Google Workspace</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {isGoogleConnected 
-                      ? 'Connected - Gmail, Calendar, Tasks enabled'
-                      : 'Not connected - Click to authorize'
-                    }
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-sm font-medium">
+                  Your WhatsApp Phone Number
+                </Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="+919821230311"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  onBlur={checkGoogleConnection}
+                  className="max-w-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter your WhatsApp number to link with Google account
+                </p>
               </div>
-              {isGoogleConnected ? (
-                <span className="px-3 py-1 bg-success/10 text-success text-sm font-medium rounded-full">
-                  Active
-                </span>
-              ) : (
-                <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle}>
-                  {isLoadingGoogle ? 'Checking...' : 'Connect Google'}
-                </Button>
-              )}
+
+              <div className={`flex items-center justify-between p-4 border rounded-lg ${
+                isGoogleConnected ? 'border-success/20 bg-success/5' : 'border-border'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${
+                    isGoogleConnected ? 'bg-success/10' : 'bg-warning/10'
+                  }`}>
+                    {isGoogleConnected ? (
+                      <CheckCircle2 className="w-5 h-5 text-success" />
+                    ) : (
+                      <XCircle className="w-5 h-5 text-warning" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Google Workspace</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {isGoogleConnected 
+                        ? `Connected${userEmail ? ` - ${userEmail}` : ''} - Gmail, Calendar, Tasks enabled`
+                        : 'Not connected - Click to authorize'
+                      }
+                    </p>
+                  </div>
+                </div>
+                {isGoogleConnected ? (
+                  <span className="px-3 py-1 bg-success/10 text-success text-sm font-medium rounded-full">
+                    Active
+                  </span>
+                ) : (
+                  <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle || !phoneNumber}>
+                    {isLoadingGoogle ? 'Checking...' : 'Connect Google'}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Lovable AI Status */}

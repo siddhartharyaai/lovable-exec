@@ -66,6 +66,26 @@ serve(async (req) => {
     const tokens = await tokenResponse.json();
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
+    // Get user email from Google
+    let userEmail = null;
+    try {
+      const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { 'Authorization': `Bearer ${tokens.access_token}` }
+      });
+      if (userInfoResponse.ok) {
+        const userInfo = await userInfoResponse.json();
+        userEmail = userInfo.email;
+        
+        // Update user record with email
+        await supabase
+          .from('users')
+          .update({ email: userEmail, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+      }
+    } catch (e) {
+      console.error('Failed to fetch user email:', e);
+    }
+
     // Store tokens
     const { error: upsertError } = await supabase
       .from('oauth_tokens')
