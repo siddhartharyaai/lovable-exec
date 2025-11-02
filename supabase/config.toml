@@ -106,3 +106,15 @@ verify_jwt = false
 
 [functions.analyze-interaction]
 verify_jwt = false
+
+[functions.route-intent]
+verify_jwt = false
+
+[functions.detect-language]
+verify_jwt = false
+
+[functions.translate]
+verify_jwt = false
+
+[functions.send-typing-indicator]
+verify_jwt = false

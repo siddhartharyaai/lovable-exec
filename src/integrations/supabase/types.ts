@@ -345,6 +345,44 @@ export type Database = {
           },
         ]
       }
+      session_state: {
+        Row: {
+          clarify_sent_at: string | null
+          confirmation_pending: Json | null
+          context: Json | null
+          pending_intent: Json | null
+          updated_at: string | null
+          user_id: string
+          waiting_for: string[] | null
+        }
+        Insert: {
+          clarify_sent_at?: string | null
+          confirmation_pending?: Json | null
+          context?: Json | null
+          pending_intent?: Json | null
+          updated_at?: string | null
+          user_id: string
+          waiting_for?: string[] | null
+        }
+        Update: {
+          clarify_sent_at?: string | null
+          confirmation_pending?: Json | null
+          context?: Json | null
+          pending_intent?: Json | null
+          updated_at?: string | null
+          user_id?: string
+          waiting_for?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_state_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_preferences: {
         Row: {
           confidence_score: number | null
