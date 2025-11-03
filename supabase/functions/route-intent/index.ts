@@ -49,6 +49,11 @@ const INTENT_SCHEMAS: Record<string, any> = {
       tone: { question: "What tone? Formal, friendly, or direct?", options: ["formal", "friendly", "direct"] }
     }
   },
+  task_read: {
+    critical: [],
+    optional: [],
+    clarify_templates: {}
+  },
   task_create: {
     critical: ["title"],
     optional: ["due_date", "priority"],
@@ -118,6 +123,7 @@ INTENT DETECTION:
 - update_calendar_event: "move", "reschedule", "change time"
 - email_search: "find email", "search inbox"
 - email_draft: "send email", "draft email"
+- task_read: "what tasks", "show tasks", "my tasks", "to do list", "pending tasks", "what's on my list"
 - task_create: "add task", "create todo"
 - task_complete: "mark done", "complete task"
 - task_delete: "delete task"
