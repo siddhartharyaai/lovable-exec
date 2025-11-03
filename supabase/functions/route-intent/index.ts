@@ -82,6 +82,13 @@ const INTENT_SCHEMAS: Record<string, any> = {
       query: { question: "What should I search for?", options: [] }
     }
   },
+  scrape_website: {
+    critical: ["url"],
+    optional: ["extract_schema"],
+    clarify_templates: {
+      url: { question: "Which website URL should I scrape?", options: [] }
+    }
+  },
   reminder_create: {
     critical: ["text", "due_time"],
     optional: [],
@@ -128,6 +135,7 @@ INTENT DETECTION:
 - task_complete: "mark done", "complete task"
 - task_delete: "delete task"
 - web_search: "search for", "what is", "find information"
+- scrape_website: "read this page", "extract from URL", "what's on this website", "analyze this article", "scrape", "get content from"
 - reminder_create: "remind me", "set reminder"
 
 EXAMPLES:
@@ -241,6 +249,14 @@ serve(async (req) => {
                 query: {
                   type: "string",
                   description: "Search query or text"
+                },
+                url: {
+                  type: "string",
+                  description: "URL to scrape (must include http:// or https://)"
+                },
+                extract_schema: {
+                  type: "object",
+                  description: "Optional JSON schema for structured extraction from scraped website"
                 },
                 recipient: {
                   type: "string",

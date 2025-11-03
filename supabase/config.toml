@@ -89,6 +89,9 @@ verify_jwt = false
 [functions.handle-search]
 verify_jwt = false
 
+[functions.handle-scrape]
+verify_jwt = false
+
 [functions.daily-briefing]
 verify_jwt = false
 

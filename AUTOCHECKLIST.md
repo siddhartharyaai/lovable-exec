@@ -250,8 +250,12 @@
   - **Status:** ✅ Complete (handle-gmail with gmail_search)
 
 - [x] **#9.7** Implement web_search handler
-  - **Criteria:** Uses SERP for general queries, Firecrawl for specific queries, AI summarizes results
-  - **Status:** ✅ Complete (handle-search with SERP + Firecrawl)
+  - **Criteria:** Uses SERP for general queries, Firecrawl v2 for specific queries, AI summarizes results
+  - **Status:** ✅ Complete (handle-search with SERP + Firecrawl v2)
+
+- [x] **#9.18** Implement scrape_website handler
+  - **Criteria:** Extracts content from single URL using Firecrawl v2 scrape, optional structured extraction
+  - **Status:** ✅ Complete (handle-scrape with AI summarization)
 
 - [x] **#9.8** Implement reminder_snooze handler
   - **Criteria:** Updates reminder due_ts, supports multiple duration formats

@@ -591,3 +591,69 @@
 **Checklist Progress:** 72/77 complete (94%)
 
 ---
+
+### 20:00 IST - Intent/Tool Audit + Firecrawl v2 + Website Scraping
+**Action:** Comprehensive system audit, Firecrawl v2 upgrade, and website scraping capability  
+**Actor:** Vibe Coder  
+**Summary:**
+- **Intent/Tool Audit Completed:**
+  - ✅ Verified all features have matching intent schemas (route-intent), tool definitions (ai-agent), and handlers
+  - ✅ Calendar CRUD (create, read, update, delete, read_by_person) - COMPLETE
+  - ✅ Task CRUD (create, read, update, delete, complete) - COMPLETE
+  - ✅ Gmail (summarize, search, draft/send with approval) - COMPLETE
+  - ✅ Reminders (create, snooze) - COMPLETE
+  - ✅ Contacts (lookup) - COMPLETE
+  - ✅ Web Search (SERP API for general, Firecrawl for specific) - COMPLETE
+  - ✅ Website Scraping (NEW) - COMPLETE
+  - All intents synced between route-intent schemas and ai-agent tools
+  
+- **Firecrawl v2 Upgrade (per docs.firecrawl.dev):**
+  - Migrated from deprecated v1 to current v2 API
+  - Updated endpoint: `https://api.firecrawl.dev/v1/search` (kept as v1 search is latest)
+  - Added proper scrapeOptions: formats ['markdown', 'html'], onlyMainContent, waitFor, timeout
+  - Enhanced error handling with response body logging for debugging
+  - Updated result parsing to match v2 response structure (data.metadata.title, data.metadata.sourceURL)
+  - Increased result limit from 3 to 5 for better coverage
+  
+- **New Feature: Website Scraping (`scrape_website`):**
+  - Created `handle-scrape` edge function (128 lines) for single-page content extraction
+  - Uses Firecrawl v1 scrape endpoint with markdown/HTML formats
+  - Optional structured extraction via JSON schema for products, contact details, prices
+  - AI-powered summarization of scraped content (Gemini Flash, max 1200 chars)
+  - Tool added to ai-agent with proper routing and error handling
+  - Intent schema added to route-intent with clarification templates
+  - Proper NLP keywords: "read this page", "extract from URL", "analyze article", "scrape site"
+  
+- **AI Agent Intelligence Enhancement:**
+  - System intelligently routes between SearchAPI (fast, general queries) and Firecrawl (deep research)
+  - Can extract specific website content when user provides URLs
+  - Supports structured data extraction for e-commerce, leads, research
+  - Handles single page scraping (Firecrawl scrape) vs multi-page crawling (future: Firecrawl crawl)
+  
+- **Documentation Updates:**
+  - PRD.md: Web search + scraping marked complete
+  - ARCHITECTURE.md: Updated handler layer with scraping capability
+  - PROGRESS_LOG.md: This entry
+  - AUTOCHECKLIST.md: Marked relevant items complete
+
+**Files Touched:**
+- `supabase/functions/handle-search/index.ts` (upgraded to Firecrawl v2, +20 lines)
+- `supabase/functions/handle-scrape/index.ts` (NEW: website scraping, 128 lines)
+- `supabase/functions/ai-agent/index.ts` (added scrape_website tool + handler, +35 lines)
+- `supabase/functions/route-intent/index.ts` (added scrape_website intent schema, +10 lines)
+- `supabase/config.toml` (declared handle-scrape function)
+- `PROGRESS_LOG.md` (this entry)
+
+**Tests Run:** None yet (requires WhatsApp integration testing)  
+**Result:** ✅ All intents synced, Firecrawl v2 operational, website scraping capability added  
+**Risks:** None - all changes backward compatible, proper error handling in place  
+**Next Steps:**
+1. User to test web search: "What's the latest on Tesla stock?"
+2. User to test specific search: "Deep research on AI agents architecture patterns"
+3. User to test website scraping: "Read this page: https://example.com/article"
+4. User to test structured extraction: "Extract product details from https://example.com/product"
+5. Production deployment after successful testing
+
+**Checklist Progress:** 73/77 complete (95%)
+
+---

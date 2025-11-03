@@ -402,6 +402,27 @@ const TOOLS = [
         required: ["name"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "scrape_website",
+      description: "Extract and analyze content from a specific URL using Firecrawl. Use when user wants to 'read this page', 'what's on this website', 'extract info from URL', 'analyze this article', 'scrape this site'. Perfect for getting detailed content from a single webpage.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { 
+            type: "string", 
+            description: "Full URL to scrape (must include http:// or https://). Examples: 'https://example.com/article', 'https://company.com/about'" 
+          },
+          extract_schema: { 
+            type: "object", 
+            description: "Optional: JSON schema for structured data extraction. Use when user wants specific fields extracted (e.g., product info, contact details, prices). Leave empty for general content summary." 
+          }
+        },
+        required: ["url"]
+      }
+    }
   }
 ];
 
@@ -434,6 +455,7 @@ You have deep integration with:
 • ⏰ **WhatsApp Reminders** - Set native WhatsApp reminders, snooze functionality
 • 👥 **Google Contacts** - Look up contact information (email, phone, address)
 • 🔍 **Web Search** - Access real-time information, news, weather, sports scores, stock prices
+• 📄 **Website Scraper** - Extract and analyze content from any URL using Firecrawl
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚡ CRITICAL DECISION RULES
@@ -1033,6 +1055,21 @@ serve(async (req) => {
                 }
               });
               result = searchResult.data?.message || 'Search completed';
+              break;
+
+            case 'scrape_website':
+              const scrapeResult = await supabase.functions.invoke('handle-scrape', {
+                body: { 
+                  intent: { 
+                    entities: { 
+                      url: args.url,
+                      schema: args.extract_schema
+                    } 
+                  }, 
+                  traceId 
+                }
+              });
+              result = scrapeResult.data?.message || 'Website scraped';
               break;
 
             case 'lookup_contact':

@@ -24,8 +24,8 @@ serve(async (req) => {
     let message = '';
 
     if (searchType === 'specific' && firecrawlApiKey) {
-      // Use Firecrawl for deep, specific searches requiring detailed content analysis
-      console.log(`[${traceId}] Using Firecrawl for in-depth search`);
+      // Use Firecrawl v2 for deep, specific searches requiring detailed content analysis
+      console.log(`[${traceId}] Using Firecrawl v2 for in-depth search`);
       
       const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
@@ -35,12 +35,18 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           query,
-          limit: 3,
+          limit: 5,
+          scrapeOptions: {
+            formats: ['markdown', 'html'],
+            onlyMainContent: true,
+            waitFor: 2000
+          }
         }),
       });
 
       if (!searchResponse.ok) {
-        console.error(`[${traceId}] Firecrawl API error: ${searchResponse.status}`);
+        const errorBody = await searchResponse.text();
+        console.error(`[${traceId}] Firecrawl API error: ${searchResponse.status}, ${errorBody}`);
         throw new Error('Firecrawl search failed');
       }
 
@@ -50,9 +56,9 @@ serve(async (req) => {
       if (results.length === 0) {
         message = '🔍 No detailed results found for your query. Try rephrasing or using a more general search.';
       } else {
-        // Use AI to analyze and synthesize detailed content
+        // Use AI to analyze and synthesize detailed content from Firecrawl results
         const resultText = results.map((r: any) => 
-          `**${r.title}**\nURL: ${r.url}\nContent: ${r.markdown?.substring(0, 800) || r.description || 'No content available'}`
+          `**${r.metadata?.title || 'No title'}**\nURL: ${r.metadata?.sourceURL || r.url || 'No URL'}\nContent: ${r.markdown?.substring(0, 1000) || r.html?.substring(0, 800) || r.description || 'No content available'}`
         ).join('\n\n---\n\n');
 
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
