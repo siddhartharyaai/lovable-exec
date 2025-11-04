@@ -423,6 +423,44 @@ const TOOLS = [
         required: ["url"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_drive",
+      description: "Search for files in Google Drive by name or content. Use when user wants to 'find my document', 'search drive', 'where is that file', 'locate the presentation'. Returns up to 10 most relevant files with names and links.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { 
+            type: "string", 
+            description: "Search query - can be file name, content keyword, or combination. Examples: 'Q4 budget', 'meeting notes', 'presentation slides'" 
+          },
+          max_results: { 
+            type: "number", 
+            description: "Maximum number of results to return. Default 10, max 50." 
+          }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_documents",
+      description: "Query the user's uploaded documents (PDFs, DOCs, DOCX) using natural language Q&A. Use when user asks about content in their uploaded documents. Performs keyword search and provides context-aware answers with citations.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { 
+            type: "string", 
+            description: "Natural language question about the documents. Examples: 'What was the revenue in Q3?', 'Find all mentions of project timeline', 'What are the key risks?'" 
+          }
+        },
+        required: ["query"]
+      }
+    }
   }
 ];
 
@@ -442,7 +480,9 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
     .eq('user_id', userId)
     .gte('confidence_score', 0.6);
 
-  let basePrompt = `You are an AI Executive Assistant integrated with WhatsApp, serving as a personal productivity companion for busy professionals in India. Your purpose is to help users manage their work and personal life through natural, conversational interactions.
+  let basePrompt = `You are Maria, an AI Executive Assistant integrated with WhatsApp, serving as a personal productivity companion for busy professionals in India. Your purpose is to help users manage their work and personal life through natural, conversational interactions.
+
+**Your Name:** Maria - Always introduce yourself as Maria when asked. You're friendly, efficient, and proactive.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 YOUR CORE CAPABILITIES
@@ -1083,6 +1123,20 @@ serve(async (req) => {
                 }
               });
               result = contactResult.data?.message || 'Contact not found';
+              break;
+
+            case 'search_drive':
+              const driveResult = await supabase.functions.invoke('handle-drive', {
+                body: { intent: { query: args.query, max_results: args.max_results || 10 }, userId, traceId }
+              });
+              result = driveResult.data?.message || 'Drive search completed';
+              break;
+
+            case 'query_documents':
+              const docQnaResult = await supabase.functions.invoke('handle-document-qna', {
+                body: { intent: { query: args.query }, userId, traceId }
+              });
+              result = docQnaResult.data?.message || 'Document query completed';
               break;
 
             default:

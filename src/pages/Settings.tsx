@@ -139,6 +139,59 @@ const Settings = () => {
     }
   };
 
+  const handleDisconnectGoogle = async () => {
+    if (!phoneNumber) return;
+
+    // Confirm disconnection
+    if (!window.confirm('Are you sure you want to disconnect Google Workspace? You will need to reconnect to use Calendar, Gmail, Tasks, and Drive features.')) {
+      return;
+    }
+
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone', phoneNumber)
+        .maybeSingle();
+      
+      if (!userData) {
+        throw new Error('User not found');
+      }
+
+      // Delete OAuth tokens
+      const { error: deleteError } = await supabase
+        .from('oauth_tokens')
+        .delete()
+        .eq('user_id', userData.id)
+        .eq('provider', 'google');
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Clear email from user record
+      await supabase
+        .from('users')
+        .update({ email: null })
+        .eq('id', userData.id);
+
+      setIsGoogleConnected(false);
+      setUserEmail("");
+      
+      toast({
+        title: "Google Disconnected",
+        description: "Your Google account has been disconnected successfully",
+      });
+    } catch (error) {
+      console.error('Error disconnecting Google:', error);
+      toast({
+        title: "Disconnection failed",
+        description: error instanceof Error ? error.message : "Failed to disconnect Google account",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <div className="container max-w-4xl mx-auto px-4 py-12">
@@ -225,9 +278,13 @@ const Settings = () => {
                   </div>
                 </div>
                 {isGoogleConnected ? (
-                  <span className="px-3 py-1 bg-success/10 text-success text-sm font-medium rounded-full">
-                    Active
-                  </span>
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={handleDisconnectGoogle}
+                  >
+                    Disconnect
+                  </Button>
                 ) : (
                   <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle || !phoneNumber}>
                     {isLoadingGoogle ? 'Checking...' : 'Connect Google'}

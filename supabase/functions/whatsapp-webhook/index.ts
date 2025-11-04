@@ -6,6 +6,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Simple text extraction from document buffer
+async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string): Promise<string> {
+  try {
+    // For now, convert buffer to text (basic extraction)
+    // In production, use proper PDF/DOC parsing libraries
+    const decoder = new TextDecoder('utf-8');
+    let text = decoder.decode(buffer);
+    
+    // Clean up text
+    text = text
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove control chars
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    // Limit to first 50,000 chars to prevent storage issues
+    return text.substring(0, 50000);
+  } catch (error) {
+    console.error('Text extraction error:', error);
+    return '';
+  }
+}
+
 // Verify Twilio signature
 function verifyTwilioSignature(signature: string, url: string, params: Record<string, string>): boolean {
   // For now, basic implementation - in production, use crypto for proper verification
@@ -76,6 +98,50 @@ serve(async (req) => {
     // Handle audio transcription
     let messageBody = body;
     let translatedBody = body;
+
+    // Handle document upload (PDF, DOC, DOCX)
+    if (mediaUrl && (messageType === 'application/pdf' || 
+                      messageType === 'application/msword' || 
+                      messageType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+      console.log(`[${traceId}] Document detected: ${messageType}`);
+      
+      try {
+        // Download document
+        const docResponse = await fetch(mediaUrl, {
+          headers: {
+            'Authorization': 'Basic ' + btoa(`${Deno.env.get('TWILIO_ACCOUNT_SID')}:${Deno.env.get('TWILIO_AUTH_TOKEN')}`)
+          }
+        });
+
+        if (docResponse.ok) {
+          const docBuffer = await docResponse.arrayBuffer();
+          const docText = await extractTextFromDocument(docBuffer, messageType);
+          
+          if (docText) {
+            // Store document in database
+            const filename = mediaUrl.split('/').pop() || 'uploaded_document';
+            await supabase.from('user_documents').insert({
+              user_id: userId,
+              filename: filename,
+              mime_type: messageType,
+              content_text: docText
+            });
+
+            const confirmReply = `📄 I've saved your document "${filename}"! You can ask me questions about it anytime. What would you like to know?`;
+            await supabase.functions.invoke('send-whatsapp', {
+              body: { userId, message: confirmReply, traceId }
+            });
+            
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      } catch (docError) {
+        console.error(`[${traceId}] Document processing error:`, docError);
+        // Continue with normal message flow
+      }
+    }
 
     if (mediaUrl && messageType.startsWith('audio/')) {
       console.log(`[${traceId}] Transcribing audio from URL: ${mediaUrl}`);

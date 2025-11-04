@@ -383,6 +383,44 @@ export type Database = {
           },
         ]
       }
+      user_documents: {
+        Row: {
+          content_text: string
+          created_at: string
+          filename: string
+          id: string
+          mime_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content_text: string
+          created_at?: string
+          filename: string
+          id?: string
+          mime_type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content_text?: string
+          created_at?: string
+          filename?: string
+          id?: string
+          mime_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_documents_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_preferences: {
         Row: {
           confidence_score: number | null

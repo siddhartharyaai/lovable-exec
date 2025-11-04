@@ -121,3 +121,9 @@ verify_jwt = false
 
 [functions.send-typing-indicator]
 verify_jwt = false
+
+[functions.handle-drive]
+verify_jwt = false
+
+[functions.handle-document-qna]
+verify_jwt = false

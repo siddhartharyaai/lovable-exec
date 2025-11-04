@@ -9,10 +9,10 @@
 
 ## 1. Vision & Goals
 
-Build a WhatsApp-first AI executive assistant that empowers busy professionals in India to manage their work and personal life through natural conversation. The assistant proactively surfaces important information, manages calendar and tasks, and handles communications - all through the familiar WhatsApp interface.
+Build a WhatsApp-first AI executive assistant named **Maria** that empowers busy professionals in India to manage their work and personal life through natural conversation. Maria proactively surfaces important information, manages calendar and tasks, and handles communications - all through the familiar WhatsApp interface.
 
 ### Core Goal
-Create a conversational AI assistant that:
+Create Maria, a conversational AI assistant that:
 - Lives where users already are (WhatsApp)
 - Deeply integrates with Google Workspace (Gmail, Calendar, Tasks, People)
 - Proactively surfaces important information (briefings, reminders, birthdays)
