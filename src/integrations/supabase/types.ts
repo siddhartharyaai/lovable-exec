@@ -454,6 +454,7 @@ export type Database = {
       users: {
         Row: {
           birthday_reminders_enabled: boolean
+          city: string | null
           created_at: string
           daily_briefing_enabled: boolean
           email: string | null
@@ -465,6 +466,7 @@ export type Database = {
         }
         Insert: {
           birthday_reminders_enabled?: boolean
+          city?: string | null
           created_at?: string
           daily_briefing_enabled?: boolean
           email?: string | null
@@ -476,6 +478,7 @@ export type Database = {
         }
         Update: {
           birthday_reminders_enabled?: boolean
+          city?: string | null
           created_at?: string
           daily_briefing_enabled?: boolean
           email?: string | null

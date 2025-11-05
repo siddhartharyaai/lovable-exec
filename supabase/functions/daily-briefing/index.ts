@@ -179,8 +179,71 @@ serve(async (req) => {
           }));
         }
 
+        // Get user's city for weather
+        const { data: userData } = await supabase
+          .from('users')
+          .select('city')
+          .eq('id', tokenData.user_id)
+          .single();
+
+        const userCity = userData?.city || 'Mumbai';
+        briefingData.city = userCity;
+
+        // Fetch weather forecast using SERP API
+        const serpApiKey = Deno.env.get('SERP_API_KEY');
+        let weatherInfo = null;
+        
+        if (serpApiKey) {
+          try {
+            const weatherResponse = await fetch(
+              `https://serpapi.com/search.json?engine=google&q=weather+${encodeURIComponent(userCity)}+today&api_key=${serpApiKey}`
+            );
+            
+            if (weatherResponse.ok) {
+              const weatherData = await weatherResponse.json();
+              const answerBox = weatherData.answer_box;
+              
+              if (answerBox) {
+                weatherInfo = {
+                  temp: answerBox.temperature || 'N/A',
+                  condition: answerBox.weather || answerBox.precipitation || 'Unknown',
+                  humidity: answerBox.humidity || 'N/A'
+                };
+              }
+            }
+          } catch (weatherError) {
+            console.error(`[${traceId}] Weather fetch error:`, weatherError);
+          }
+        }
+
+        // Fetch top 5 news headlines using SERP API
+        let newsHeadlines: string[] = [];
+        
+        if (serpApiKey) {
+          try {
+            const newsResponse = await fetch(
+              `https://serpapi.com/search.json?engine=google_news&q=top+news+India+today&api_key=${serpApiKey}`
+            );
+            
+            if (newsResponse.ok) {
+              const newsData = await newsResponse.json();
+              const newsResults = newsData.news_results || [];
+              
+              newsHeadlines = newsResults.slice(0, 5).map((item: any) => 
+                item.title || item.snippet || ''
+              ).filter((h: string) => h.length > 0);
+            }
+          } catch (newsError) {
+            console.error(`[${traceId}] News fetch error:`, newsError);
+          }
+        }
+
         // Generate AI-powered briefing
-        const briefingPrompt = `Create a concise morning briefing (max 1200 chars) for today based on:
+        const briefingPrompt = `Create a concise morning briefing (max 1500 chars) for today based on:
+
+${weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp}, ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
+
+${newsHeadlines.length > 0 ? `Top News Headlines:\n${newsHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join('\n')}` : ''}
 
 Calendar (${briefingData.calendar.length} events):
 ${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location ? ` (${e.location})` : ''}`).join('\n')}
@@ -193,7 +256,7 @@ Emails: ${briefingData.emails} unread in Primary
 Reminders (${briefingData.reminders.length} today):
 ${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}
 
-Format with emojis and clear sections. Be encouraging and actionable.`;
+Format with emojis and clear sections. Start with weather, then news headlines (1 line each), then calendar, tasks, emails, and reminders. Be encouraging and actionable.`;
 
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',

@@ -172,10 +172,29 @@ CRITICAL: Maximum 2 lines per email. Keep total under 1000 characters.`
           );
 
           if (!markReadResponse.ok) {
-            throw new Error('Failed to mark emails as read');
+            const errorText = await markReadResponse.text();
+            console.error(`[Mark Read Error] Status: ${markReadResponse.status}, Response: ${errorText}`);
+            throw new Error(`Gmail API error: ${markReadResponse.status} - ${errorText}`);
           }
 
-          message = `✅ Marked ${messageIds.length} email(s) as read in your Primary inbox!`;
+          console.log(`[Mark Read Success] Marked ${messageIds.length} emails as read`);
+
+          // Verify emails were actually marked as read
+          const verifyResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+category:primary&maxResults=1`,
+            {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            }
+          );
+
+          let remainingUnread = 0;
+          if (verifyResponse.ok) {
+            const verifyData = await verifyResponse.json();
+            remainingUnread = verifyData.resultSizeEstimate || 0;
+          }
+
+          message = `✅ Marked ${messageIds.length} email(s) as read in your Primary inbox!${remainingUnread > 0 ? ` (${remainingUnread} still unread)` : ' All clear!'}`;
+          console.log(`[Mark Read Verification] ${remainingUnread} emails still unread after marking`);
         }
       } else {
         message = 'Marking specific emails as read - not yet implemented';

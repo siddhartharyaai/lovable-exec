@@ -18,6 +18,8 @@ const Settings = () => {
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(true);
   const [phoneNumber, setPhoneNumber] = useState("+919821230311");
   const [userEmail, setUserEmail] = useState("");
+  const [city, setCity] = useState("Mumbai");
+  const [isSavingCity, setIsSavingCity] = useState(false);
 
   useEffect(() => {
     checkGoogleConnection();
@@ -57,7 +59,7 @@ const Settings = () => {
       // Check if this specific phone number has Google connected
       const { data: userData } = await supabase
         .from('users')
-        .select('id, email')
+        .select('id, email, city')
         .eq('phone', phoneNumber)
         .maybeSingle();
       
@@ -69,6 +71,9 @@ const Settings = () => {
 
       if (userData.email) {
         setUserEmail(userData.email);
+      }
+      if (userData.city) {
+        setCity(userData.city);
       }
 
       const { data: tokenData } = await supabase
@@ -189,6 +194,44 @@ const Settings = () => {
         description: error instanceof Error ? error.message : "Failed to disconnect Google account",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleSaveCity = async () => {
+    if (!phoneNumber || !city) return;
+
+    setIsSavingCity(true);
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone', phoneNumber)
+        .maybeSingle();
+      
+      if (!userData) {
+        throw new Error('User not found. Please enter your WhatsApp number.');
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({ city: city })
+        .eq('id', userData.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "City Updated",
+        description: `Your city has been set to ${city} for weather forecasts`,
+      });
+    } catch (error) {
+      console.error('Error saving city:', error);
+      toast({
+        title: "Failed to save city",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingCity(false);
     }
   };
 
@@ -350,6 +393,37 @@ const Settings = () => {
                 checked={birthdayReminders}
                 onCheckedChange={setBirthdayReminders}
               />
+            </div>
+
+            {/* City Setting */}
+            <div className="pt-4 border-t">
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="city" className="text-base font-semibold">
+                    Your City
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Used for weather forecasts in your daily briefing
+                  </p>
+                </div>
+                <div className="flex gap-3 max-w-md">
+                  <Input
+                    id="city"
+                    type="text"
+                    placeholder="Mumbai"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleSaveCity} 
+                    disabled={isSavingCity || !phoneNumber}
+                    size="default"
+                  >
+                    {isSavingCity ? 'Saving...' : 'Save City'}
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {/* Timezone Display */}

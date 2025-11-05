@@ -315,10 +315,26 @@ serve(async (req) => {
           }
 
         } else if (sessionState?.confirmation_pending) {
-          // User is responding to confirmation
+          // User is responding to confirmation - case-insensitive and natural language
           const userResponse = translatedBody.toLowerCase().trim();
-          const isConfirmed = ['yes', 'y', 'sure', 'ok', 'confirm', 'go ahead', 'proceed'].includes(userResponse);
-          const isDenied = ['no', 'n', 'cancel', 'nope', 'stop'].includes(userResponse);
+          
+          // Check for confirmation keywords (case-insensitive, fuzzy matching)
+          const confirmKeywords = ['yes', 'y', 'yeah', 'yup', 'sure', 'ok', 'okay', 'confirm', 'go ahead', 'proceed', 'do it', 'go', 'affirmative'];
+          const denyKeywords = ['no', 'n', 'nope', 'nah', 'cancel', 'stop', 'dont', "don't", 'negative'];
+          
+          // Also check if message contains the action confirmation (e.g., "mark read", "delete")
+          const actionConfirmations: Record<string, string[]> = {
+            'gmail_mark_read': ['mark read', 'mark as read', 'mark them read', 'read all'],
+            'delete_calendar_event': ['delete', 'remove', 'cancel'],
+            'delete_task': ['delete', 'remove']
+          };
+          
+          const pendingAction = sessionState.confirmation_pending?.intent;
+          const actionPhrases = actionConfirmations[pendingAction] || [];
+          const containsActionPhrase = actionPhrases.some(phrase => userResponse.includes(phrase));
+          
+          const isConfirmed = confirmKeywords.some(keyword => userResponse.includes(keyword)) || containsActionPhrase;
+          const isDenied = denyKeywords.some(keyword => userResponse.includes(keyword));
 
           if (isConfirmed) {
             // Execute the pending action
