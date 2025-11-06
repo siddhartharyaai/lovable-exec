@@ -99,9 +99,34 @@ const INTENT_SCHEMAS: Record<string, any> = {
   }
 };
 
-const ROUTER_SYSTEM_PROMPT = `You are the routing intelligence for Maria - an AI executive assistant. Your job is to analyze the user's message and extract structured information about their intent.
+// Calculate current date dynamically in IST timezone
+function getCurrentDateIST(): { today: string; tomorrow: string; currentDateTime: string } {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+  const istTime = new Date(now.getTime() + istOffset);
+  
+  const today = istTime.toISOString().split('T')[0];
+  
+  const tomorrowDate = new Date(istTime.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrow = tomorrowDate.toISOString().split('T')[0];
+  
+  const currentDateTime = istTime.toISOString();
+  
+  return { today, tomorrow, currentDateTime };
+}
 
-CRITICAL: Maria is the assistant's name. When users ask "who are you", "what's your name", or similar identity questions, the response should ALWAYS introduce the assistant as "Maria".
+function buildRouterSystemPrompt(): string {
+  const { today, tomorrow, currentDateTime } = getCurrentDateIST();
+  
+  return `You are the routing intelligence layer for Maria, an AI executive assistant. Your ONLY job is to classify user intent and extract structured information. You do NOT answer questions or engage in conversation - you only classify and extract data.
+
+CRITICAL: DO NOT respond to identity questions like "who are you" or "what's your name". These should be classified as ANSWER decision so Maria (the main AI agent) can introduce herself properly.
+
+CURRENT DATE/TIME CONTEXT:
+- Current date: ${today}
+- Current time (IST): ${currentDateTime}
+- Tomorrow's date: ${tomorrow}
+- Timezone: Asia/Kolkata (IST, UTC+5:30)
 
 CRITICAL: You MUST extract slots from the user's message. Always populate the slots object with any information you find.
 
@@ -111,20 +136,25 @@ SLOT EXTRACTION RULES (MANDATORY):
    - "appointment with Sarah" → person: "Sarah"
    - "call with John tomorrow" → person: "John"
 
-2. Dates: Convert relative dates to ISO format (YYYY-MM-DD)
-   - "tomorrow" → "2025-11-03"
-   - "today" → "2025-11-02"
-   - "next Monday" → calculate the date
-   - "November 5th" → "2025-11-05"
+2. Dates: Convert relative dates to ISO format (YYYY-MM-DD) using CURRENT DATE CONTEXT
+   - "tomorrow" → "${tomorrow}"
+   - "today" → "${today}"
+   - "next Monday" → calculate from ${today}
+   - "November 6th" → "2025-11-06"
+   - "06 Nov" → "2025-11-06"
+   - "Nov 6 2025" → "2025-11-06"
 
-3. Event titles: Extract ONLY if user provides a SPECIFIC custom title
+3. Times: Extract and convert to 24-hour format
+   - "3pm" → time: "15:00"
+   - "7pm" → time: "19:00"
+   - "at 2:30" → time: "14:30"
+   - "tomorrow evening" → date: "${tomorrow}", time: "19:00"
+   - "tomorrow morning" → date: "${tomorrow}", time: "09:00"
+
+4. Event titles: Extract ONLY if user provides a SPECIFIC custom title
    - "project review meeting" → event_title: "project review meeting"
    - "standup" → event_title: "standup"
    - Generic words like "meeting", "appointment", "call" → DO NOT extract as event_title
-
-4. Times: Extract and convert to 24-hour format
-   - "3pm" → time: "15:00"
-   - "at 2:30" → time: "14:30"
 
 INTENT DETECTION:
 - delete_calendar_event: "delete", "cancel", "remove" + calendar/meeting/appointment
@@ -140,23 +170,36 @@ INTENT DETECTION:
 - scrape_website: "read this page", "extract from URL", "what's on this website", "analyze this article", "scrape", "get content from"
 - reminder_create: "remind me", "set reminder"
 
+CONVERSATION CONTEXT AWARENESS (CRITICAL):
+- Check conversation history for previously mentioned dates/times
+- If user already provided "tomorrow" or a specific date in the last 2 messages, extract it from context
+- Don't ask "When?" if the date was already mentioned
+
 EXAMPLES:
 Message: "delete my meeting with Rohan tomorrow"
-→ slots: { person: "Rohan", date: "2025-11-03" }
+→ slots: { person: "Rohan", date: "${tomorrow}" }
 
 Message: "cancel the standup on Friday"
-→ slots: { event_title: "standup", date: "2025-11-07" }
+→ slots: { event_title: "standup", date: "[calculate Friday's date]" }
 
 Message: "remove tomorrow's appointment with Sarah"
-→ slots: { person: "Sarah", date: "2025-11-03" }
+→ slots: { person: "Sarah", date: "${tomorrow}" }
+
+Message: "Remind me to give Sudhir the form tomorrow"
+→ slots: { text: "give Sudhir the form", due_time: "${tomorrow}T09:00:00+05:30" }
+
+Message: "tomorrow" (when previous message was "Remind me to call John")
+→ Check context, extract: { text: "call John", due_time: "${tomorrow}T09:00:00+05:30" }
 
 DECISION LOGIC:
-- ACT: All critical slots present
+- ACT: All critical slots present AND high confidence
   - delete_calendar_event needs: date AND (person OR event_title)
-- ASK: Missing critical slots OR confidence < 0.75
-- ANSWER: Conversational (greetings, thanks, questions)
+  - reminder_create needs: text AND due_time
+- ASK: Missing critical slots OR confidence < 0.75 OR ambiguous
+- ANSWER: Conversational (greetings, thanks, identity questions, general chat)`;
+}
 
-Current date: ${new Date().toISOString().split('T')[0]}`;
+const ROUTER_SYSTEM_PROMPT = buildRouterSystemPrompt();
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -176,9 +219,12 @@ serve(async (req) => {
 
     console.log(`[${traceId}] Processing: "${message.substring(0, 100)}..."`);
 
-    // Build conversation context
+    // Regenerate prompt with current date/time for each request
+    const currentPrompt = buildRouterSystemPrompt();
+    
+    // Build conversation context with date awareness
     const messages = [
-      { role: 'system', content: ROUTER_SYSTEM_PROMPT },
+      { role: 'system', content: currentPrompt },
       ...(conversationHistory || []).slice(-5).map((msg: any) => ({
         role: msg.role,
         content: msg.content
@@ -190,8 +236,22 @@ serve(async (req) => {
     if (sessionState?.pending_intent) {
       messages.splice(1, 0, {
         role: 'system',
-        content: `CONTEXT: User has pending intent: ${JSON.stringify(sessionState.pending_intent)}. The current message may be filling missing slots: ${sessionState.waiting_for?.join(', ')}`
+        content: `CONTEXT: User has pending intent: ${JSON.stringify(sessionState.pending_intent)}. The current message may be filling missing slots: ${sessionState.waiting_for?.join(', ')}. Check if the user's current message provides these missing slots based on conversation context.`
       });
+    }
+    
+    // Add conversation context awareness for slot filling
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recentMessages = conversationHistory.slice(-3).map((m: any) => m.content).join(' ');
+      
+      // Check if dates were mentioned recently
+      const datePatterns = /tomorrow|today|tonight|(\d{1,2}\s*(?:am|pm|AM|PM))|(\d{1,2}[/-]\d{1,2})|(\d{1,2}\s+\w+\s+\d{4})|next\s+\w+day|this\s+\w+day/i;
+      if (datePatterns.test(recentMessages)) {
+        messages.splice(1, 0, {
+          role: 'system',
+          content: `IMPORTANT: User mentioned time/date info in recent messages: "${recentMessages}". Extract any date/time references from this context.`
+        });
+      }
     }
 
     // Define tool for structured output with explicit slot fields

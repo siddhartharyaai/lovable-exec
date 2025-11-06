@@ -241,7 +241,7 @@ serve(async (req) => {
         // Generate AI-powered briefing
         const briefingPrompt = `Create a concise morning briefing (max 1500 chars) for today based on:
 
-${weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp}, ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
+${weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp} (use Celsius with °C), ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
 
 ${newsHeadlines.length > 0 ? `Top News Headlines:\n${newsHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join('\n')}` : ''}
 
@@ -256,7 +256,13 @@ Emails: ${briefingData.emails} unread in Primary
 Reminders (${briefingData.reminders.length} today):
 ${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}
 
-Format with emojis and clear sections. Start with weather, then news headlines (1 line each), then calendar, tasks, emails, and reminders. Be encouraging and actionable.`;
+CRITICAL FORMATTING RULES:
+- Use Celsius (°C) for all temperatures, NEVER Fahrenheit
+- Use IST timezone for all times
+- Format with emojis (🌤️ for weather, 📰 for news, 📅 for calendar, ✅ for tasks, 📧 for emails, ⏰ for reminders)
+- Start with weather, then news headlines (1 line each), then calendar, tasks, emails, and reminders
+- Be encouraging, warm, and actionable - like a caring personal assistant
+- Keep it conversational and friendly, not robotic`;
 
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -269,7 +275,7 @@ Format with emojis and clear sections. Start with weather, then news headlines (
             messages: [
               { 
                 role: 'system', 
-                content: 'You are a helpful executive assistant creating morning briefings. Be concise, encouraging, and actionable.' 
+                content: 'You are Maria, a warm and empathetic executive assistant creating morning briefings. Be concise, encouraging, and actionable. CRITICAL: Always use Celsius (°C) for temperatures and IST for times. Be conversational and friendly, not robotic.' 
               },
               { role: 'user', content: briefingPrompt }
             ],

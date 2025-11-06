@@ -46,7 +46,13 @@ serve(async (req) => {
     const fromNumber = twilioWhatsAppNumber.startsWith('whatsapp:') 
       ? twilioWhatsAppNumber 
       : `whatsapp:${twilioWhatsAppNumber}`;
-    console.log(`[${traceId}] Sending WhatsApp to ${toNumber} from ${fromNumber}`);
+    
+    console.log(`[${traceId}] === SEND WHATSAPP DEBUG ===`);
+    console.log(`[${traceId}] To: ${toNumber}`);
+    console.log(`[${traceId}] From: ${fromNumber}`);
+    console.log(`[${traceId}] Message length: ${message.length} chars`);
+    console.log(`[${traceId}] Message preview: ${message.substring(0, 100)}...`);
+    console.log(`[${traceId}] Twilio Account SID: ${twilioAccountSid.substring(0, 10)}...`);
 
     // Truncate message if it exceeds WhatsApp limit (1600 characters)
     const MAX_LENGTH = 1550; // Leave some buffer
@@ -88,18 +94,27 @@ serve(async (req) => {
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[${traceId}] Twilio error (attempt ${attempt}):`, response.status, errorText);
-          lastError = new Error(`Twilio API error: ${response.status}`);
+          console.error(`[${traceId}] === TWILIO API ERROR (attempt ${attempt}/${maxAttempts}) ===`);
+          console.error(`[${traceId}] Status: ${response.status}`);
+          console.error(`[${traceId}] Response: ${errorText}`);
+          console.error(`[${traceId}] Request details: To=${toNumber}, From=${fromNumber}`);
+          
+          lastError = new Error(`Twilio API error: ${response.status} - ${errorText}`);
           
           if (attempt < maxAttempts) {
-            await sleep(Math.pow(2, attempt) * 1000); // Exponential backoff
+            const backoffMs = Math.pow(2, attempt) * 1000;
+            console.log(`[${traceId}] Retrying in ${backoffMs}ms...`);
+            await sleep(backoffMs);
             continue;
           }
           throw lastError;
         }
 
         const data = await response.json();
-        console.log(`[${traceId}] WhatsApp sent successfully, SID:`, data.sid);
+        console.log(`[${traceId}] ✅ WhatsApp sent successfully!`);
+        console.log(`[${traceId}] Message SID: ${data.sid}`);
+        console.log(`[${traceId}] Status: ${data.status}`);
+        console.log(`[${traceId}] Date created: ${data.date_created}`);
 
         return new Response(JSON.stringify({ 
           success: true,

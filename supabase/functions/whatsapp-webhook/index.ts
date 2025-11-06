@@ -233,6 +233,15 @@ serve(async (req) => {
 
     const sessionState = sessionStateData || null;
 
+    // Calculate current date/time in IST for context
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istTime = new Date(now.getTime() + istOffset);
+    const currentDateTime = istTime.toISOString();
+    const currentDate = istTime.toISOString().split('T')[0];
+    
+    console.log(`[${traceId}] Current IST date/time: ${currentDateTime} (${currentDate})`);
+
     // Phase 1: Route intent (decide ASK/ACT/ANSWER)
     console.log(`[${traceId}] Routing intent...`);
     const routingResult = await supabase.functions.invoke('route-intent', {
@@ -241,6 +250,8 @@ serve(async (req) => {
         userId: userId,
         conversationHistory: conversationHistory,
         sessionState: sessionState,
+        currentDateTime: currentDateTime,
+        currentDate: currentDate,
         traceId: traceId
       }
     });
