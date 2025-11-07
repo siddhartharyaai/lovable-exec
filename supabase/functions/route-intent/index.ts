@@ -242,14 +242,44 @@ serve(async (req) => {
     
     // Add conversation context awareness for slot filling
     if (conversationHistory && conversationHistory.length > 0) {
-      const recentMessages = conversationHistory.slice(-3).map((m: any) => m.content).join(' ');
+      const last5Messages = conversationHistory.slice(-5);
+      const contextInfo = {
+        dates: [] as string[],
+        persons: [] as string[],
+        pendingAction: null as string | null
+      };
       
-      // Check if dates were mentioned recently
-      const datePatterns = /tomorrow|today|tonight|(\d{1,2}\s*(?:am|pm|AM|PM))|(\d{1,2}[/-]\d{1,2})|(\d{1,2}\s+\w+\s+\d{4})|next\s+\w+day|this\s+\w+day/i;
-      if (datePatterns.test(recentMessages)) {
+      // Extract context from recent messages
+      for (const msg of last5Messages) {
+        const content = msg.content.toLowerCase();
+        
+        // Extract dates mentioned (tomorrow, today, specific dates)
+        if (/tomorrow|today|(\d{1,2}[/-]\d{1,2})|(\d{1,2}\s+\w+)|november|december|january/i.test(content)) {
+          const match = content.match(/tomorrow|today|(\d{1,2}[/-]\d{1,2})|(\d{1,2}\s+\w+)|(november|december|january|february|march|april|may|june|july|august|september|october)/i);
+          if (match) contextInfo.dates.push(match[0]);
+        }
+        
+        // Extract person names (capitalized words)
+        const namePattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g;
+        const names = msg.content.match(namePattern);
+        if (names) contextInfo.persons.push(...names);
+        
+        // Check for pending actions
+        if (/remind me|delete|cancel|schedule|search|find|show me/.test(content)) {
+          contextInfo.pendingAction = msg.content;
+        }
+      }
+      
+      // Inject context as system message if we found relevant info
+      if (contextInfo.dates.length || contextInfo.persons.length || contextInfo.pendingAction) {
         messages.splice(1, 0, {
           role: 'system',
-          content: `IMPORTANT: User mentioned time/date info in recent messages: "${recentMessages}". Extract any date/time references from this context.`
+          content: `CONVERSATION CONTEXT (use this to fill missing slots):
+${contextInfo.dates.length ? `- Dates mentioned in recent messages: "${contextInfo.dates.join(', ')}"` : ''}
+${contextInfo.persons.length ? `- Persons mentioned: "${[...new Set(contextInfo.persons)].slice(0, 3).join(', ')}"` : ''}
+${contextInfo.pendingAction ? `- Pending action from previous message: "${contextInfo.pendingAction}"` : ''}
+
+IMPORTANT: Use this context to extract slots. Don't ask for information already provided.`
         });
       }
     }
@@ -310,7 +340,7 @@ serve(async (req) => {
                 },
                 query: {
                   type: "string",
-                  description: "Search query or text"
+                  description: "Search query or text. Also capture natural language time references like 'November', 'last week', 'in the last 3 days' from the user's message."
                 },
                 url: {
                   type: "string",

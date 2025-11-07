@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_log: {
+        Row: {
+          action: string
+          context: Json | null
+          created_at: string
+          id: string
+          intent: string | null
+          reason: string | null
+          result: string | null
+          tool_args: Json | null
+          tool_used: string | null
+          trace_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          context?: Json | null
+          created_at?: string
+          id?: string
+          intent?: string | null
+          reason?: string | null
+          result?: string | null
+          tool_args?: Json | null
+          tool_used?: string | null
+          trace_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          context?: Json | null
+          created_at?: string
+          id?: string
+          intent?: string | null
+          reason?: string | null
+          result?: string | null
+          tool_args?: Json | null
+          tool_used?: string | null
+          trace_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_messages: {
         Row: {
           content: string
@@ -92,6 +142,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      guidelines: {
+        Row: {
+          action: string
+          condition: Json
+          created_at: string
+          description: string | null
+          enabled: boolean | null
+          id: string
+          name: string
+          priority: number | null
+          updated_at: string
+        }
+        Insert: {
+          action: string
+          condition: Json
+          created_at?: string
+          description?: string | null
+          enabled?: boolean | null
+          id?: string
+          name: string
+          priority?: number | null
+          updated_at?: string
+        }
+        Update: {
+          action?: string
+          condition?: Json
+          created_at?: string
+          description?: string | null
+          enabled?: boolean | null
+          id?: string
+          name?: string
+          priority?: number | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       interaction_feedback: {
         Row: {
@@ -350,6 +436,8 @@ export type Database = {
           clarify_sent_at: string | null
           confirmation_pending: Json | null
           context: Json | null
+          journey_state: Json | null
+          journey_step: number | null
           pending_intent: Json | null
           updated_at: string | null
           user_id: string
@@ -359,6 +447,8 @@ export type Database = {
           clarify_sent_at?: string | null
           confirmation_pending?: Json | null
           context?: Json | null
+          journey_state?: Json | null
+          journey_step?: number | null
           pending_intent?: Json | null
           updated_at?: string | null
           user_id: string
@@ -368,6 +458,8 @@ export type Database = {
           clarify_sent_at?: string | null
           confirmation_pending?: Json | null
           context?: Json | null
+          journey_state?: Json | null
+          journey_step?: number | null
           pending_intent?: Json | null
           updated_at?: string | null
           user_id?: string

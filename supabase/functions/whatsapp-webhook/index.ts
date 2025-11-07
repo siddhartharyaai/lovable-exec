@@ -6,24 +6,73 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Simple text extraction from document buffer
-async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string): Promise<string> {
+// Use Lovable AI to extract text from PDF via vision
+async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, traceId: string): Promise<string> {
   try {
-    // For now, convert buffer to text (basic extraction)
-    // In production, use proper PDF/DOC parsing libraries
+    console.log(`[${traceId}] Extracting text from ${mimeType} document...`);
+    
+    // For PDFs, use Lovable AI with vision to extract text
+    if (mimeType === 'application/pdf') {
+      const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+      if (!lovableApiKey) {
+        console.error(`[${traceId}] LOVABLE_API_KEY not configured`);
+        return '';
+      }
+      
+      // Convert buffer to base64
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      
+      // Use Lovable AI to extract text via vision
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Extract ALL text content from this PDF document. Return only the extracted text, no commentary or formatting.'
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:application/pdf;base64,${base64}`
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: 4000
+        }),
+      });
+      
+      if (!aiResponse.ok) {
+        console.error(`[${traceId}] AI extraction failed: ${aiResponse.status}`);
+        return '';
+      }
+      
+      const aiData = await aiResponse.json();
+      const extractedText = aiData.choices[0].message.content;
+      console.log(`[${traceId}] Successfully extracted ${extractedText.length} characters via AI`);
+      return extractedText.substring(0, 50000);
+    }
+    
+    // Fallback: basic text decoding for other document types
     const decoder = new TextDecoder('utf-8');
     let text = decoder.decode(buffer);
-    
-    // Clean up text
     text = text
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove control chars
-      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
-    
-    // Limit to first 50,000 chars to prevent storage issues
     return text.substring(0, 50000);
   } catch (error) {
-    console.error('Text extraction error:', error);
+    console.error(`[${traceId}] Text extraction error:`, error);
     return '';
   }
 }
@@ -100,6 +149,7 @@ serve(async (req) => {
     let translatedBody = body;
 
     // Handle document upload (PDF, DOC, DOCX)
+    let documentContext = '';
     if (mediaUrl && (messageType === 'application/pdf' || 
                       messageType === 'application/msword' || 
                       messageType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
@@ -115,31 +165,52 @@ serve(async (req) => {
 
         if (docResponse.ok) {
           const docBuffer = await docResponse.arrayBuffer();
-          const docText = await extractTextFromDocument(docBuffer, messageType);
+          const docText = await extractTextFromDocument(docBuffer, messageType, traceId);
           
           if (docText) {
             // Store document in database
             const filename = mediaUrl.split('/').pop() || 'uploaded_document';
-            await supabase.from('user_documents').insert({
+            const { data: docData } = await supabase.from('user_documents').insert({
               user_id: userId,
               filename: filename,
               mime_type: messageType,
               content_text: docText
-            });
+            }).select().single();
 
-            const confirmReply = `📄 I've saved your document "${filename}"! You can ask me questions about it anytime. What would you like to know?`;
-            await supabase.functions.invoke('send-whatsapp', {
-              body: { userId, message: confirmReply, traceId }
-            });
+            console.log(`[${traceId}] Document saved: ${filename}`);
             
-            return new Response(JSON.stringify({ success: true }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            // If user asked to summarize or analyze the document, continue processing
+            // Otherwise, send confirmation and continue with message if there is one
+            const docKeywords = ['summarize', 'summary', 'what does', 'tell me about', 'read', 'analyze', 'extract'];
+            const hasDocRequest = body && docKeywords.some(kw => body.toLowerCase().includes(kw));
+            
+            if (!body || !hasDocRequest) {
+              // No text message or no specific doc request - just confirm upload
+              const confirmReply = `📄 Got it! I've saved your document "${filename}". What would you like to know about it?`;
+              await supabase.functions.invoke('send-whatsapp', {
+                body: { userId, message: confirmReply, traceId }
+              });
+              
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+            
+            // User wants to process the document - enrich message context
+            documentContext = `[SYSTEM: User just uploaded document "${filename}" (${messageType}). It has been saved and is ready for querying.]`;
+            messageBody = body ? `${documentContext}\n\nUser: ${body}` : documentContext;
+            console.log(`[${traceId}] Continuing with document context: ${messageBody.substring(0, 100)}...`);
           }
         }
       } catch (docError) {
         console.error(`[${traceId}] Document processing error:`, docError);
-        // Continue with normal message flow
+        const errorReply = "Sorry, I had trouble processing that document. Could you try uploading it again?";
+        await supabase.functions.invoke('send-whatsapp', {
+          body: { userId, message: errorReply, traceId }
+        });
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
     }
 

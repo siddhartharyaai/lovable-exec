@@ -54,86 +54,116 @@ serve(async (req) => {
     console.log(`[${traceId}] Message preview: ${message.substring(0, 100)}...`);
     console.log(`[${traceId}] Twilio Account SID: ${twilioAccountSid.substring(0, 10)}...`);
 
-    // Truncate message if it exceeds WhatsApp limit (1600 characters)
-    const MAX_LENGTH = 1550; // Leave some buffer
-    let finalMessage = message;
+    // Split long messages into multiple WhatsApp messages instead of truncating
+    const MAX_LENGTH = 1500;
+    const messages: string[] = [];
+    
     if (message.length > MAX_LENGTH) {
-      console.log(`[${traceId}] Message too long (${message.length} chars), truncating to ${MAX_LENGTH}`);
-      finalMessage = message.substring(0, MAX_LENGTH) + '\n\n...(message truncated)';
+      console.log(`[${traceId}] Message too long (${message.length} chars), splitting into chunks`);
+      
+      // Split on paragraph breaks first
+      const paragraphs = message.split('\n\n');
+      let currentChunk = '';
+      
+      for (const para of paragraphs) {
+        if ((currentChunk + para).length > MAX_LENGTH) {
+          if (currentChunk) messages.push(currentChunk.trim());
+          currentChunk = para + '\n\n';
+        } else {
+          currentChunk += para + '\n\n';
+        }
+      }
+      if (currentChunk) messages.push(currentChunk.trim());
+    } else {
+      messages.push(message);
     }
 
-    // Prepare Twilio API request with retry logic
-    let attempt = 0;
-    const maxAttempts = 3;
-    let lastError;
-
-    while (attempt < maxAttempts) {
-      attempt++;
+    // Send all message chunks with retry logic and delays
+    let allMessageSids: string[] = [];
+    
+    for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+      const chunk = messages[messageIndex];
       
-      try {
-        const formData = new URLSearchParams();
-        formData.append('To', toNumber);
-        formData.append('From', fromNumber);
-        formData.append('Body', finalMessage);
-        if (mediaUrl) {
-          formData.append('MediaUrl', mediaUrl);
-        }
+      // Add small delay between messages (except for first one)
+      if (messageIndex > 0) {
+        console.log(`[${traceId}] Waiting 800ms before sending chunk ${messageIndex + 1}/${messages.length}`);
+        await sleep(800);
+      }
+      
+      let attempt = 0;
+      const maxAttempts = 3;
+      let lastError;
+      let chunkSent = false;
 
-        const authHeader = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
-        const response = await fetch(
-          `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${authHeader}`,
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString(),
+      while (attempt < maxAttempts && !chunkSent) {
+        attempt++;
+        
+        try {
+          const formData = new URLSearchParams();
+          formData.append('To', toNumber);
+          formData.append('From', fromNumber);
+          formData.append('Body', chunk);
+          if (mediaUrl && messageIndex === 0) { // Only attach media to first chunk
+            formData.append('MediaUrl', mediaUrl);
           }
-        );
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[${traceId}] === TWILIO API ERROR (attempt ${attempt}/${maxAttempts}) ===`);
-          console.error(`[${traceId}] Status: ${response.status}`);
-          console.error(`[${traceId}] Response: ${errorText}`);
-          console.error(`[${traceId}] Request details: To=${toNumber}, From=${fromNumber}`);
-          
-          lastError = new Error(`Twilio API error: ${response.status} - ${errorText}`);
-          
+          const authHeader = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
+          const response = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${authHeader}`,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: formData.toString(),
+            }
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[${traceId}] === TWILIO API ERROR (chunk ${messageIndex + 1}, attempt ${attempt}/${maxAttempts}) ===`);
+            console.error(`[${traceId}] Status: ${response.status}`);
+            console.error(`[${traceId}] Response: ${errorText}`);
+            
+            lastError = new Error(`Twilio API error: ${response.status} - ${errorText}`);
+            
+            if (attempt < maxAttempts) {
+              const backoffMs = Math.pow(2, attempt) * 1000;
+              console.log(`[${traceId}] Retrying in ${backoffMs}ms...`);
+              await sleep(backoffMs);
+              continue;
+            }
+            throw lastError;
+          }
+
+          const data = await response.json();
+          allMessageSids.push(data.sid);
+          chunkSent = true;
+          console.log(`[${traceId}] ✅ WhatsApp chunk ${messageIndex + 1}/${messages.length} sent! SID: ${data.sid}`);
+
+        } catch (error) {
+          lastError = error;
           if (attempt < maxAttempts) {
-            const backoffMs = Math.pow(2, attempt) * 1000;
-            console.log(`[${traceId}] Retrying in ${backoffMs}ms...`);
-            await sleep(backoffMs);
-            continue;
+            const errMsg = error instanceof Error ? error.message : 'Unknown error';
+            console.log(`[${traceId}] Retry ${attempt}/${maxAttempts} after error:`, errMsg);
+            await sleep(Math.pow(2, attempt) * 1000);
           }
-          throw lastError;
         }
-
-        const data = await response.json();
-        console.log(`[${traceId}] ✅ WhatsApp sent successfully!`);
-        console.log(`[${traceId}] Message SID: ${data.sid}`);
-        console.log(`[${traceId}] Status: ${data.status}`);
-        console.log(`[${traceId}] Date created: ${data.date_created}`);
-
-        return new Response(JSON.stringify({ 
-          success: true,
-          messageSid: data.sid
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-
-      } catch (error) {
-        lastError = error;
-        if (attempt < maxAttempts) {
-          const errMsg = error instanceof Error ? error.message : 'Unknown error';
-          console.log(`[${traceId}] Retry ${attempt}/${maxAttempts} after error:`, errMsg);
-          await sleep(Math.pow(2, attempt) * 1000);
-        }
+      }
+      
+      if (!chunkSent) {
+        throw lastError;
       }
     }
 
-    throw lastError;
+    return new Response(JSON.stringify({ 
+      success: true,
+      messageSids: allMessageSids,
+      chunksCount: messages.length
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
 
   } catch (error) {
     console.error('Error in send-whatsapp:', error);

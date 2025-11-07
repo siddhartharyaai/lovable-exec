@@ -6,6 +6,62 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Parse natural language time references into Gmail date filters
+function parseTimeReference(reference: string, traceId: string): { afterDate?: string; beforeDate?: string } | null {
+  console.log(`[${traceId}] Parsing time reference: "${reference}"`);
+  
+  const lower = reference.toLowerCase();
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  
+  // Month parsing: "November", "November 2025", "Nov", "in November"
+  const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const monthAbbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  
+  const monthMatch = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(\s+(\d{4}))?/i);
+  
+  if (monthMatch) {
+    const monthStr = monthMatch[1].toLowerCase();
+    const year = monthMatch[3] ? parseInt(monthMatch[3]) : istTime.getFullYear();
+    let monthIndex = monthNames.indexOf(monthStr);
+    if (monthIndex === -1) {
+      monthIndex = monthAbbr.indexOf(monthStr.substring(0, 3));
+    }
+    
+    if (monthIndex >= 0) {
+      const startDate = new Date(year, monthIndex, 1);
+      const endDate = new Date(year, monthIndex + 1, 0);
+      
+      const result = {
+        afterDate: startDate.toISOString().split('T')[0].replace(/-/g, '/'),
+        beforeDate: endDate.toISOString().split('T')[0].replace(/-/g, '/')
+      };
+      console.log(`[${traceId}] Parsed month to date range: ${JSON.stringify(result)}`);
+      return result;
+    }
+  }
+  
+  // Days back: "last 3 days", "past week", "last 2 days"
+  const daysMatch = lower.match(/(?:last|past)\s+(\d+)\s+days?/);
+  if (daysMatch) {
+    const days = parseInt(daysMatch[1]);
+    const threshold = new Date(istTime.getTime() - days * 24 * 60 * 60 * 1000);
+    const result = { afterDate: threshold.toISOString().split('T')[0].replace(/-/g, '/') };
+    console.log(`[${traceId}] Parsed days back to: ${JSON.stringify(result)}`);
+    return result;
+  }
+  
+  // Week references: "last week", "this week"
+  if (lower.includes('last week')) {
+    const threshold = new Date(istTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return { afterDate: threshold.toISOString().split('T')[0].replace(/-/g, '/') };
+  }
+  
+  console.log(`[${traceId}] No time reference pattern matched`);
+  return null;
+}
+
 async function getAccessToken(supabase: any, userId: string) {
   const { data: tokenData, error } = await supabase
     .from('oauth_tokens')
@@ -201,18 +257,32 @@ CRITICAL: Maximum 2 lines per email. Keep total under 1000 characters.`
       }
 
     } else if (intent.type === 'gmail_search') {
-      const { sender, daysBack, maxResults } = intent.entities;
+      const { sender, daysBack, maxResults, query: searchQuery } = intent.entities;
+      
+      console.log(`[${traceId}] Gmail search - sender: ${sender}, daysBack: ${daysBack}, query: ${searchQuery}`);
       
       // Build Gmail query
-      let query = `from:${sender}`;
+      let query = sender ? `from:${sender}` : '';
       
-      // Add date filter if specified
-      if (daysBack) {
+      // Try to parse natural language time reference from query or user message
+      let timeFilter = null;
+      if (searchQuery) {
+        timeFilter = parseTimeReference(searchQuery, traceId);
+      }
+      
+      // Apply time filter
+      if (timeFilter) {
+        if (timeFilter.afterDate) query += ` after:${timeFilter.afterDate}`;
+        if (timeFilter.beforeDate) query += ` before:${timeFilter.beforeDate}`;
+      } else if (daysBack) {
+        // Fallback to daysBack parameter
         const dateThreshold = new Date();
         dateThreshold.setDate(dateThreshold.getDate() - daysBack);
         const formattedDate = dateThreshold.toISOString().split('T')[0].replace(/-/g, '/');
         query += ` after:${formattedDate}`;
       }
+      
+      console.log(`[${traceId}] Final Gmail query: "${query}"`);
       
       // Fetch matching messages
       const response = await fetch(

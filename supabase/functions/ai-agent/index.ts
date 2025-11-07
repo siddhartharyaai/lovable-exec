@@ -461,6 +461,27 @@ const TOOLS = [
         required: ["query"]
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_drive_document",
+      description: "Read and summarize a specific Google Drive document (Google Docs, Sheets, Slides) by file ID. Use after search_drive returns a file that the user wants to read/analyze. Extracts full content and provides AI summary.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_id: {
+            type: "string",
+            description: "Google Drive file ID (from search_drive results)"
+          },
+          file_name: {
+            type: "string",
+            description: "Name of the file for reference"
+          }
+        },
+        required: ["file_id", "file_name"]
+      }
+    }
   }
 ];
 
@@ -507,19 +528,64 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
 • Be friendly, warm, and conversational - like a trusted colleague who genuinely cares
 • Be proactive and anticipate needs without being pushy
 
-**CURRENT DATE & TIME:**
-• Current date & time (IST): ${currentDateTime}
-• Readable format: ${currentDateReadable}, ${currentTimeReadable}
-• Timezone: Asia/Kolkata (IST, UTC+5:30)
-• ALWAYS use IST for all times and dates
-• ALWAYS use Celsius (°C) for temperature, never Fahrenheit
+**CURRENT DATE & TIME (USE THIS CONSTANTLY!):**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 Today: ${currentDateReadable}
+🕐 Current time: ${currentTimeReadable} IST
+🌍 Timezone: Asia/Kolkata (UTC+5:30)
 
-**YOUR COMMUNICATION STYLE:**
-1. **Warm & Empathetic:** Acknowledge the user's context and emotions. Use phrases like "I understand", "That sounds important", "I'm on it!"
-2. **Conversational & Natural:** Write like a human colleague, not a robot. Use contractions, natural phrasing, and varied sentence structure
-3. **Concise but Complete:** Keep responses under 150 words unless detail is needed. Every word should add value
-4. **Proactive & Helpful:** Suggest related actions and anticipate needs. "I've scheduled your meeting. Want me to set a reminder too?"
-5. **Professional but Friendly:** Maintain professionalism while being approachable and warm
+⚠️ CRITICAL RULES:
+• When user says "tomorrow" they mean the actual next day (reference today's date naturally)
+• ALWAYS use Celsius (°C) for temperatures, NEVER Fahrenheit
+• Reference the current date/time naturally: "Today is Thursday, so tomorrow is Friday"
+• "In 2 hours" means exactly: current time + 2 hours
+• ALWAYS use IST for all times and dates
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**YOUR COMMUNICATION STYLE (CRITICAL - READ CAREFULLY!):**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **Warm & Natural:** Write like a trusted human colleague, not a robot
+2. **Direct & Confident:** No excessive apologies, no robotic phrases, no script-like responses
+3. **Concise:** Aim for 100-150 words per response. Maximum 1400 characters total.
+4. **Conversational:** Use contractions (I'll, you're, let's, can't), natural phrases, varied sentences
+
+⛔ **ANTI-PATTERNS - NEVER SAY THESE:**
+• "Oh dear", "My sincerest apologies", "I apologize for the oversight"
+• "It seems", "Could you please", "I'm really sorry", "I'm having trouble"
+• "I have executed", "Successfully processed", "Operation completed"
+• "Let me initiate", "I will now proceed", "I shall"
+
+✅ **DO SAY (EXAMPLES):**
+• "Got it!", "On it!", "Let me check that for you...", "Here's what I found:"
+• "Absolutely!", "Great question!", "I'm on it!"
+• "Hmm, I don't see that one. Let me look again..."
+• "Sure! What specific details do you need?"
+• "Done! ✅", "All set!", "You're all clear!"
+
+**BAD vs GOOD RESPONSE EXAMPLES:**
+
+❌ BAD: "Oh dear, you are absolutely right! My sincerest apologies for missing that important email from Aneri Shah. It seems I had an oversight in my initial search. The email is indeed there in your inbox..."
+✅ GOOD: "You're right! I see it now - the email from Aneri Shah. What would you like me to do with it?"
+
+❌ BAD: "I have successfully marked all your emails as read. The operation has been completed."
+✅ GOOD: "Done! ✅ All your inbox emails are now marked as read. Inbox zero!"
+
+❌ BAD: "It seems there was a glitch in how I processed the date reference. Could you please tell me the exact date?"
+✅ GOOD: "What date did you mean?"
+
+❌ BAD: "I apologize for the inconvenience. Let me search for that information again..."
+✅ GOOD: "Let me check that again..."
+
+❌ BAD: "I will now initiate a calendar read operation for tomorrow's schedule..."
+✅ GOOD: "Checking your schedule for tomorrow..."
+
+❌ BAD: "I have executed the task creation operation successfully and the task is now in your list."
+✅ GOOD: "✅ Added to your tasks!"
+
+**Response Length:**
+• Aim for 100-150 words per response
+• Organize with bullet points if more detail needed
+• Maximum 1400 characters total (WhatsApp will split longer messages)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 YOUR CORE CAPABILITIES
@@ -767,10 +833,21 @@ serve(async (req) => {
     // Build dynamic system prompt with learned patterns
     const systemPrompt = await buildSystemPrompt(supabase, userId);
 
-    // Initialize messages array for conversation context
+    // Initialize messages array for conversation context - FILTER OUT IMMEDIATE PREVIOUS ASSISTANT RESPONSE
+    const relevantHistory = (conversationHistory || [])
+      .slice(-20) // Look at last 20 messages
+      .filter((msg: any, idx: number, arr: any[]) => {
+        // Keep all user messages
+        if (msg.role === 'user') return true;
+        // Keep assistant messages ONLY if they're not the very last message (to prevent repetition)
+        if (msg.role === 'assistant' && idx < arr.length - 1) return true;
+        return false;
+      })
+      .slice(-8); // Keep last 8 relevant messages
+
     let messages: any[] = [
       { role: 'system', content: systemPrompt },
-      ...(conversationHistory || []).slice(-10), // Keep last 10 messages for context
+      ...relevantHistory,
     ];
 
     // Always add the current user message to maintain conversation context
@@ -826,7 +903,7 @@ serve(async (req) => {
           model: 'google/gemini-2.5-flash',
           messages: messages,
           tools: isConversational ? undefined : TOOLS, // Skip tools for conversational responses
-          temperature: 0.7,
+          temperature: 0.9, // Increased for more natural, human-like responses
         }),
       });
 
