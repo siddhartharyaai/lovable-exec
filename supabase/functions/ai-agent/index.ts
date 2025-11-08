@@ -833,25 +833,35 @@ serve(async (req) => {
     // Build dynamic system prompt with learned patterns
     const systemPrompt = await buildSystemPrompt(supabase, userId);
 
-    // Initialize messages array for conversation context - FILTER OUT IMMEDIATE PREVIOUS ASSISTANT RESPONSE
+    // Build conversation context with aggressive filtering to prevent contamination
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istTime = new Date(now.getTime() + istOffset);
+    const currentContextMsg = `CURRENT REQUEST CONTEXT: It is now ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. User just asked: "${message}". Focus ONLY on this question.`;
+    
     const relevantHistory = (conversationHistory || [])
-      .slice(-20) // Look at last 20 messages
+      .slice(-30) // Look at last 30 messages
       .filter((msg: any, idx: number, arr: any[]) => {
-        // Keep all user messages
+        // Always keep user messages (they provide context)
         if (msg.role === 'user') return true;
-        // Keep assistant messages ONLY if they're not the very last message (to prevent repetition)
-        if (msg.role === 'assistant' && idx < arr.length - 1) return true;
+        
+        // For assistant messages:
+        // Skip the last 2 assistant messages to prevent repetition
+        if (msg.role === 'assistant') {
+          const isRecent = idx >= arr.length - 2;
+          return !isRecent;
+        }
+        
         return false;
       })
-      .slice(-8); // Keep last 8 relevant messages
+      .slice(-6); // Keep only last 6 relevant messages (3 turns of conversation)
 
     let messages: any[] = [
       { role: 'system', content: systemPrompt },
+      { role: 'system', content: currentContextMsg }, // Add explicit current context
       ...relevantHistory,
+      { role: 'user', content: message } // Current user message
     ];
-
-    // Always add the current user message to maintain conversation context
-    messages.push({ role: 'user', content: message });
 
     let aiMessage: any;
 
@@ -1277,6 +1287,29 @@ serve(async (req) => {
                 body: { intent: { query: args.query }, userId, traceId }
               });
               result = docQnaResult.data?.message || 'Document query completed';
+              break;
+
+            case 'read_drive_document':
+              // Extract fileId from Google Drive URLs
+              let fileId = args.file_id || '';
+              const drivePatterns = [
+                /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,
+                /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/,
+                /docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/,
+              ];
+              
+              for (const pattern of drivePatterns) {
+                const match = fileId.match(pattern);
+                if (match?.[1]) {
+                  fileId = match[1];
+                  break;
+                }
+              }
+              
+              const readDriveResult = await supabase.functions.invoke('read-drive-document', {
+                body: { fileId, fileName: args.file_name, userId, traceId }
+              });
+              result = readDriveResult.data?.message || 'Could not read document';
               break;
 
             default:

@@ -15,8 +15,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let traceId = 'unknown';
+  
   try {
-    const { userId, message, mediaUrl, traceId } = await req.json();
+    const body = await req.json();
+    const { userId, message, mediaUrl, traceId: reqTraceId } = body;
+    traceId = reqTraceId || traceId;
+    
+    console.log(`[${traceId}] ========== SEND-WHATSAPP START ==========`);
+    console.log(`[${traceId}] Request body keys:`, Object.keys(body));
+    console.log(`[${traceId}] Message length: ${message?.length || 0} chars`);
     
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -24,21 +32,39 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+    console.log(`[${traceId}] Twilio SID exists: ${!!twilioAccountSid}`);
+    console.log(`[${traceId}] Twilio Token exists: ${!!twilioAuthToken}`);
+    console.log(`[${traceId}] Twilio Number exists: ${!!twilioWhatsAppNumber}`);
+    console.log(`[${traceId}] Twilio Number value: ${twilioWhatsAppNumber}`);
+
     if (!twilioAccountSid || !twilioAuthToken || !twilioWhatsAppNumber) {
+      console.error(`[${traceId}] FATAL: Twilio credentials missing!`);
       throw new Error('Twilio credentials not configured');
+    }
+    
+    if (!userId || !message) {
+      console.error(`[${traceId}] FATAL: Missing userId or message!`);
+      throw new Error('userId and message are required');
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Get user phone number
+    console.log(`[${traceId}] Fetching user phone for userId: ${userId}`);
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('phone')
       .eq('id', userId)
       .single();
 
-    if (userError || !user) {
-      throw new Error('User not found');
+    if (userError) {
+      console.error(`[${traceId}] User fetch error:`, userError);
+      throw new Error(`User fetch failed: ${userError.message}`);
+    }
+    
+    if (!user || !user.phone) {
+      console.error(`[${traceId}] User not found or phone missing`);
+      throw new Error('User not found or phone number missing');
     }
 
     const toNumber = `whatsapp:${user.phone}`;
@@ -47,7 +73,7 @@ serve(async (req) => {
       ? twilioWhatsAppNumber 
       : `whatsapp:${twilioWhatsAppNumber}`;
     
-    console.log(`[${traceId}] === SEND WHATSAPP DEBUG ===`);
+    console.log(`[${traceId}] === TWILIO CALL DETAILS ===`);
     console.log(`[${traceId}] To: ${toNumber}`);
     console.log(`[${traceId}] From: ${fromNumber}`);
     console.log(`[${traceId}] Message length: ${message.length} chars`);
@@ -99,32 +125,43 @@ serve(async (req) => {
         attempt++;
         
         try {
+          console.log(`[${traceId}] Attempt ${attempt}/${maxAttempts} for chunk ${messageIndex + 1}`);
+          
           const formData = new URLSearchParams();
           formData.append('To', toNumber);
           formData.append('From', fromNumber);
           formData.append('Body', chunk);
           if (mediaUrl && messageIndex === 0) { // Only attach media to first chunk
             formData.append('MediaUrl', mediaUrl);
+            console.log(`[${traceId}] Attaching media: ${mediaUrl}`);
           }
 
           const authHeader = btoa(`${twilioAccountSid}:${twilioAuthToken}`);
-          const response = await fetch(
-            `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Basic ${authHeader}`,
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-              body: formData.toString(),
-            }
-          );
+          const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+          
+          console.log(`[${traceId}] Making Twilio API call to: ${twilioUrl}`);
+          console.log(`[${traceId}] FormData: To=${toNumber}, From=${fromNumber}, BodyLength=${chunk.length}`);
+          
+          const response = await fetch(twilioUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${authHeader}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+          });
 
+          console.log(`[${traceId}] Twilio response status: ${response.status}`);
+          
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[${traceId}] === TWILIO API ERROR (chunk ${messageIndex + 1}, attempt ${attempt}/${maxAttempts}) ===`);
-            console.error(`[${traceId}] Status: ${response.status}`);
-            console.error(`[${traceId}] Response: ${errorText}`);
+            console.error(`[${traceId}] === TWILIO API ERROR ===`);
+            console.error(`[${traceId}] Chunk: ${messageIndex + 1}/${messages.length}`);
+            console.error(`[${traceId}] Attempt: ${attempt}/${maxAttempts}`);
+            console.error(`[${traceId}] HTTP Status: ${response.status}`);
+            console.error(`[${traceId}] Error Body: ${errorText}`);
+            console.error(`[${traceId}] Request To: ${toNumber}`);
+            console.error(`[${traceId}] Request From: ${fromNumber}`);
             
             lastError = new Error(`Twilio API error: ${response.status} - ${errorText}`);
             
@@ -140,14 +177,23 @@ serve(async (req) => {
           const data = await response.json();
           allMessageSids.push(data.sid);
           chunkSent = true;
-          console.log(`[${traceId}] ✅ WhatsApp chunk ${messageIndex + 1}/${messages.length} sent! SID: ${data.sid}`);
+          console.log(`[${traceId}] ✅✅✅ SUCCESS! WhatsApp chunk ${messageIndex + 1}/${messages.length} sent!`);
+          console.log(`[${traceId}] Message SID: ${data.sid}`);
+          console.log(`[${traceId}] Twilio Status: ${data.status}`);
 
         } catch (error) {
           lastError = error;
+          const errMsg = error instanceof Error ? error.message : 'Unknown error';
+          const errStack = error instanceof Error ? error.stack : 'No stack';
+          console.error(`[${traceId}] === CATCH BLOCK ERROR ===`);
+          console.error(`[${traceId}] Error message: ${errMsg}`);
+          console.error(`[${traceId}] Error stack: ${errStack}`);
+          
           if (attempt < maxAttempts) {
-            const errMsg = error instanceof Error ? error.message : 'Unknown error';
-            console.log(`[${traceId}] Retry ${attempt}/${maxAttempts} after error:`, errMsg);
+            console.log(`[${traceId}] Will retry (${attempt}/${maxAttempts})...`);
             await sleep(Math.pow(2, attempt) * 1000);
+          } else {
+            console.error(`[${traceId}] Max attempts reached, giving up`);
           }
         }
       }
@@ -166,11 +212,18 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('Error in send-whatsapp:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : 'No stack';
+    
+    console.error(`[${traceId}] ========== SEND-WHATSAPP FAILURE ==========`);
+    console.error(`[${traceId}] Error: ${errorMessage}`);
+    console.error(`[${traceId}] Stack: ${errorStack}`);
+    console.error(`[${traceId}] ===============================================`);
+    
     return new Response(JSON.stringify({ 
       success: false,
-      error: errorMessage 
+      error: errorMessage,
+      traceId 
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

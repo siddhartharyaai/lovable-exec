@@ -8,72 +8,113 @@ const corsHeaders = {
 
 // Use Lovable AI to extract text from PDF via vision
 async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, traceId: string): Promise<string> {
+  console.log(`[${traceId}] === DOCUMENT EXTRACTION START ===`);
+  console.log(`[${traceId}] MIME type: ${mimeType}`);
+  console.log(`[${traceId}] Size: ${buffer.byteLength} bytes`);
+  
   try {
-    console.log(`[${traceId}] Extracting text from ${mimeType} document...`);
-    
-    // For PDFs, use Lovable AI with vision to extract text
-    if (mimeType === 'application/pdf') {
+    // Try 1: Lovable AI vision for PDFs and images
+    if (mimeType === 'application/pdf' || mimeType.startsWith('image/')) {
+      console.log(`[${traceId}] Trying Lovable AI vision extraction...`);
       const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+      
       if (!lovableApiKey) {
-        console.error(`[${traceId}] LOVABLE_API_KEY not configured`);
-        return '';
-      }
-      
-      // Convert buffer to base64
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-      
-      // Use Lovable AI to extract text via vision
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            {
-              role: 'user',
-              content: [
+        console.warn(`[${traceId}] LOVABLE_API_KEY not configured, skipping AI extraction`);
+      } else {
+        try {
+          // Convert buffer to base64
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+          const dataUrl = `data:${mimeType};base64,${base64}`;
+          
+          console.log(`[${traceId}] Calling Lovable AI vision API...`);
+          const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${lovableApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash',
+              messages: [
                 {
-                  type: 'text',
-                  text: 'Extract ALL text content from this PDF document. Return only the extracted text, no commentary or formatting.'
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:application/pdf;base64,${base64}`
-                  }
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Extract ALL text content from this document. Include headings, paragraphs, tables, lists - everything. Preserve structure and formatting. Return ONLY the extracted text.'
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: { url: dataUrl }
+                    }
+                  ]
                 }
               ]
+            })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const extractedText = data.choices?.[0]?.message?.content || '';
+            
+            if (extractedText && extractedText.length > 100) {
+              console.log(`[${traceId}] ✅ AI extraction success: ${extractedText.length} chars`);
+              return extractedText;
+            } else {
+              console.warn(`[${traceId}] AI extraction returned too little text: ${extractedText.length} chars`);
             }
-          ],
-          max_tokens: 4000
-        }),
-      });
-      
-      if (!aiResponse.ok) {
-        console.error(`[${traceId}] AI extraction failed: ${aiResponse.status}`);
-        return '';
+          } else {
+            const errorText = await response.text();
+            console.warn(`[${traceId}] AI vision failed: ${response.status} - ${errorText}`);
+          }
+        } catch (aiError) {
+          console.warn(`[${traceId}] AI extraction exception:`, aiError);
+        }
       }
-      
-      const aiData = await aiResponse.json();
-      const extractedText = aiData.choices[0].message.content;
-      console.log(`[${traceId}] Successfully extracted ${extractedText.length} characters via AI`);
-      return extractedText.substring(0, 50000);
     }
     
-    // Fallback: basic text decoding for other document types
-    const decoder = new TextDecoder('utf-8');
-    let text = decoder.decode(buffer);
-    text = text
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return text.substring(0, 50000);
+    // Try 2: Basic text decoding for text-based documents
+    console.log(`[${traceId}] Trying basic text decoder...`);
+    try {
+      const decoder = new TextDecoder('utf-8', { fatal: false });
+      const text = decoder.decode(buffer);
+      
+      // Clean up text (remove null bytes, excessive whitespace)
+      const cleanedText = text
+        .replace(/\0/g, '')
+        .replace(/\s{3,}/g, '\n\n')
+        .trim();
+      
+      if (cleanedText && cleanedText.length > 100) {
+        console.log(`[${traceId}] ✅ Text decoder success: ${cleanedText.length} chars`);
+        return cleanedText;
+      } else {
+        console.warn(`[${traceId}] Text decoder returned insufficient content: ${cleanedText.length} chars`);
+      }
+    } catch (decodeError) {
+      console.warn(`[${traceId}] Text decoder failed:`, decodeError);
+    }
+    
+    // Try 3: Extract any readable text fragments
+    console.log(`[${traceId}] Trying fragment extraction...`);
+    const decoder = new TextDecoder('utf-8', { fatal: false });
+    const rawText = decoder.decode(buffer);
+    const readableFragments = rawText.match(/[\x20-\x7E\s]{20,}/g) || [];
+    
+    if (readableFragments.length > 0) {
+      const fragmentText = readableFragments.join('\n\n');
+      console.log(`[${traceId}] ⚠️ Partial extraction: ${fragmentText.length} chars from fragments`);
+      return `[Partial extraction - some content may be missing]\n\n${fragmentText}`;
+    }
+    
+    console.error(`[${traceId}] All extraction methods failed`);
+    return '[Document uploaded but text extraction incomplete. The file may be encrypted, corrupt, or in an unsupported format. Try uploading a different version or ask me specific questions about what you remember being in it.]';
+    
   } catch (error) {
-    console.error(`[${traceId}] Text extraction error:`, error);
-    return '';
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[${traceId}] === DOCUMENT EXTRACTION FAILED ===`);
+    console.error(`[${traceId}] Error: ${errMsg}`);
+    return '[Document uploaded but extraction completely failed. Please try a different file format or reach out if you need help.]';
   }
 }
 
@@ -191,6 +232,8 @@ serve(async (req) => {
                 body: { userId, message: confirmReply, traceId }
               });
               
+              // Don't return early - allow user to follow up
+              console.log(`[${traceId}] Document saved, confirmation sent, awaiting follow-up`);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
               });
