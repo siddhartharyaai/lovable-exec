@@ -220,8 +220,17 @@ serve(async (req) => {
 
             console.log(`[${traceId}] Document saved: ${filename}`);
             
+            // Store document context in session_state for follow-up queries
+            await supabase.from('session_state').upsert({
+              user_id: userId,
+              last_uploaded_doc_id: docData?.id,
+              last_uploaded_doc_name: filename,
+              last_upload_ts: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+            
             // If user asked to summarize or analyze the document, continue processing
-            // Otherwise, send confirmation and continue with message if there is one
+            // Otherwise, send confirmation and STILL allow message processing to continue
             const docKeywords = ['summarize', 'summary', 'what does', 'tell me about', 'read', 'analyze', 'extract'];
             const hasDocRequest = body && docKeywords.some(kw => body.toLowerCase().includes(kw));
             
@@ -232,15 +241,25 @@ serve(async (req) => {
                 body: { userId, message: confirmReply, traceId }
               });
               
-              // Don't return early - allow user to follow up
-              console.log(`[${traceId}] Document saved, confirmation sent, awaiting follow-up`);
+              // Store confirmation in recent_actions
+              await supabase.from('session_state').upsert({
+                user_id: userId,
+                recent_actions: [{
+                  action: 'document_uploaded',
+                  details: `Uploaded ${filename}`,
+                  timestamp: new Date().toISOString()
+                }],
+                updated_at: new Date().toISOString()
+              });
+              
+              console.log(`[${traceId}] Document saved, confirmation sent, session updated`);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
               });
             }
             
             // User wants to process the document - enrich message context
-            documentContext = `[SYSTEM: User just uploaded document "${filename}" (${messageType}). It has been saved and is ready for querying.]`;
+            documentContext = `[SYSTEM: User just uploaded document "${filename}" (${messageType}). Document ID: ${docData?.id}. It has been saved and is ready for querying.]`;
             messageBody = body ? `${documentContext}\n\nUser: ${body}` : documentContext;
             console.log(`[${traceId}] Continuing with document context: ${messageBody.substring(0, 100)}...`);
           }

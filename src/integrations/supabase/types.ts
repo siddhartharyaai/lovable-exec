@@ -438,7 +438,11 @@ export type Database = {
           context: Json | null
           journey_state: Json | null
           journey_step: number | null
+          last_upload_ts: string | null
+          last_uploaded_doc_id: string | null
+          last_uploaded_doc_name: string | null
           pending_intent: Json | null
+          recent_actions: Json | null
           updated_at: string | null
           user_id: string
           waiting_for: string[] | null
@@ -449,7 +453,11 @@ export type Database = {
           context?: Json | null
           journey_state?: Json | null
           journey_step?: number | null
+          last_upload_ts?: string | null
+          last_uploaded_doc_id?: string | null
+          last_uploaded_doc_name?: string | null
           pending_intent?: Json | null
+          recent_actions?: Json | null
           updated_at?: string | null
           user_id: string
           waiting_for?: string[] | null
@@ -460,7 +468,11 @@ export type Database = {
           context?: Json | null
           journey_state?: Json | null
           journey_step?: number | null
+          last_upload_ts?: string | null
+          last_uploaded_doc_id?: string | null
+          last_uploaded_doc_name?: string | null
           pending_intent?: Json | null
+          recent_actions?: Json | null
           updated_at?: string | null
           user_id?: string
           waiting_for?: string[] | null

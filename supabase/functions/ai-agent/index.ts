@@ -833,11 +833,27 @@ serve(async (req) => {
     // Build dynamic system prompt with learned patterns
     const systemPrompt = await buildSystemPrompt(supabase, userId);
 
+    // Get session state for additional context
+    const { data: sessionState } = await supabase
+      .from('session_state')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
     // Build conversation context with aggressive filtering to prevent contamination
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
     const istTime = new Date(now.getTime() + istOffset);
-    const currentContextMsg = `CURRENT REQUEST CONTEXT: It is now ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. User just asked: "${message}". Focus ONLY on this question.`;
+    let currentContextMsg = `CURRENT REQUEST CONTEXT: It is now ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. User just asked: "${message}". Focus ONLY on this question.`;
+    
+    // Add recent context if available
+    if (sessionState?.last_uploaded_doc_name && sessionState?.last_upload_ts) {
+      const uploadTime = new Date(sessionState.last_upload_ts);
+      const minutesAgo = Math.floor((now.getTime() - uploadTime.getTime()) / 60000);
+      if (minutesAgo < 30) { // Only mention if uploaded in last 30 minutes
+        currentContextMsg += `\n\nRECENT CONTEXT: User uploaded document "${sessionState.last_uploaded_doc_name}" ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago. If they refer to "this document", "the file", or "it", they mean this uploaded document.`;
+      }
+    }
     
     const relevantHistory = (conversationHistory || [])
       .slice(-30) // Look at last 30 messages
@@ -1283,31 +1299,63 @@ serve(async (req) => {
               break;
 
             case 'query_documents':
+              // Check if user is referring to recently uploaded document
+              const { data: sessionData } = await supabase
+                .from('session_state')
+                .select('last_uploaded_doc_id, last_uploaded_doc_name')
+                .eq('user_id', userId)
+                .single();
+              
+              let queryWithContext = args.query;
+              if (!args.query && sessionData?.last_uploaded_doc_name) {
+                // User said "summarize this" without specifying - use recent upload
+                queryWithContext = `Summarize the document "${sessionData.last_uploaded_doc_name}"`;
+              }
+              
               const docQnaResult = await supabase.functions.invoke('handle-document-qna', {
-                body: { intent: { query: args.query }, userId, traceId }
+                body: { intent: { query: queryWithContext }, userId, traceId }
               });
               result = docQnaResult.data?.message || 'Document query completed';
               break;
 
             case 'read_drive_document':
-              // Extract fileId from Google Drive URLs
+              // Extract fileId from ALL Google Drive URL formats
               let fileId = args.file_id || '';
               const drivePatterns = [
+                // Google Drive file links
                 /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,
                 /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/,
+                // Google Docs
                 /docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/,
+                // Google Sheets
+                /docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/,
+                // Google Slides
+                /docs\.google\.com\/presentation\/d\/([a-zA-Z0-9_-]+)/,
+                // Alternative formats
+                /\/d\/([a-zA-Z0-9_-]+)\//,
+                /id=([a-zA-Z0-9_-]+)/
               ];
               
-              for (const pattern of drivePatterns) {
-                const match = fileId.match(pattern);
-                if (match?.[1]) {
-                  fileId = match[1];
-                  break;
+              // Try to extract fileId from URL if it's a full URL
+              if (fileId.includes('drive.google.com') || fileId.includes('docs.google.com')) {
+                for (const pattern of drivePatterns) {
+                  const match = fileId.match(pattern);
+                  if (match?.[1]) {
+                    fileId = match[1];
+                    console.log(`[${traceId}] Extracted fileId: ${fileId}`);
+                    break;
+                  }
                 }
               }
               
+              // Validate fileId
+              if (!fileId || fileId.length < 20) {
+                result = `Sorry, I couldn't extract a valid Google Drive file ID from that link. Please make sure you're sharing a proper Google Drive, Docs, Sheets, or Slides URL.`;
+                break;
+              }
+              
               const readDriveResult = await supabase.functions.invoke('read-drive-document', {
-                body: { fileId, fileName: args.file_name, userId, traceId }
+                body: { fileId, fileName: args.file_name || 'Google Drive document', userId, traceId }
               });
               result = readDriveResult.data?.message || 'Could not read document';
               break;
