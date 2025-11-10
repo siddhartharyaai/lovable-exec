@@ -197,7 +197,7 @@ serve(async (req) => {
       console.log(`[${traceId}] Document detected: ${messageType}`);
       
       try {
-        // Download document
+        // Download document and get real filename
         const docResponse = await fetch(mediaUrl, {
           headers: {
             'Authorization': 'Basic ' + btoa(`${Deno.env.get('TWILIO_ACCOUNT_SID')}:${Deno.env.get('TWILIO_AUTH_TOKEN')}`)
@@ -209,8 +209,31 @@ serve(async (req) => {
           const docText = await extractTextFromDocument(docBuffer, messageType, traceId);
           
           if (docText) {
-            // Store document in database
-            const filename = mediaUrl.split('/').pop() || 'uploaded_document';
+            // Extract real filename from Content-Disposition or use file extension mapping
+            let filename = 'document';
+            const contentDisposition = docResponse.headers.get('Content-Disposition');
+            if (contentDisposition) {
+              const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+              if (filenameMatch && filenameMatch[1]) {
+                filename = filenameMatch[1].replace(/['"]/g, '');
+              }
+            }
+            
+            // Fallback: generate filename based on mime type
+            if (filename === 'document') {
+              const extensions: Record<string, string> = {
+                'application/pdf': 'pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+                'application/msword': 'doc',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+                'application/vnd.ms-excel': 'xls',
+                'text/plain': 'txt'
+              };
+              const ext = extensions[messageType] || 'file';
+              filename = `document_${Date.now()}.${ext}`;
+            }
+            
+            console.log(`[${traceId}] Extracted filename: ${filename}`);
             const { data: docData } = await supabase.from('user_documents').insert({
               user_id: userId,
               filename: filename,
@@ -396,6 +419,7 @@ serve(async (req) => {
       console.error(`[${traceId}] Routing error:`, routingResult.error);
       // Fallback to direct AI agent
       console.log(`[${traceId}] Falling back to AI agent...`);
+      console.log(`[${traceId}] Calling ai-agent (ANSWER mode)...`);
       const agentResult = await supabase.functions.invoke('ai-agent', {
         body: { 
           message: translatedBody,
@@ -404,7 +428,8 @@ serve(async (req) => {
           traceId: traceId
         }
       });
-
+      
+      console.log(`[${traceId}] ✅ AI agent response received`);
       replyText = agentResult.data?.message || "I'm having trouble processing that right now. Could you try rephrasing?";
     } else {
       const routing = routingResult.data;
@@ -459,6 +484,7 @@ serve(async (req) => {
           }
 
         } else if (sessionState?.confirmation_pending) {
+          console.log(`[${traceId}] User responding to pending confirmation: ${translatedBody}`);
           // User is responding to confirmation - case-insensitive and natural language
           const userResponse = translatedBody.toLowerCase().trim();
           

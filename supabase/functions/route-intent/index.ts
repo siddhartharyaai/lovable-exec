@@ -89,6 +89,26 @@ const INTENT_SCHEMAS: Record<string, any> = {
       url: { question: "Which website URL should I scrape?", options: [] }
     }
   },
+  query_documents: {
+    critical: [],
+    optional: ["query"],
+    defaults: { query: "summarize" },
+    clarify_templates: {}
+  },
+  search_drive: {
+    critical: ["query"],
+    optional: ["max_results"],
+    clarify_templates: {
+      query: { question: "What should I search for in your Google Drive?", options: [] }
+    }
+  },
+  read_drive_document: {
+    critical: ["file_id"],
+    optional: ["file_name"],
+    clarify_templates: {
+      file_id: { question: "Which Drive file should I read?", options: [] }
+    }
+  },
   reminder_create: {
     critical: ["text", "due_time"],
     optional: [],
@@ -167,7 +187,10 @@ INTENT DETECTION:
 - task_complete: "mark done", "complete task"
 - task_delete: "delete task"
 - web_search: "search for", "what is", "find information"
-- scrape_website: "read this page", "extract from URL", "what's on this website", "analyze this article", "scrape", "get content from"
+- scrape_website: ONLY when explicit URL is provided or user says "scrape this URL"
+- query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc" (when user recently uploaded a document)
+- search_drive: "find in drive", "search my drive", "look for file", "what's in my drive"
+- read_drive_document: When user provides Google Drive URL or file ID
 - reminder_create: "remind me", "set reminder"
 
 CONVERSATION CONTEXT AWARENESS (CRITICAL):

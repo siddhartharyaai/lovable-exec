@@ -1299,22 +1299,38 @@ serve(async (req) => {
               break;
 
             case 'query_documents':
+              console.log(`[${traceId}] query_documents called with args:`, args);
+              
               // Check if user is referring to recently uploaded document
               const { data: sessionData } = await supabase
                 .from('session_state')
-                .select('last_uploaded_doc_id, last_uploaded_doc_name')
+                .select('last_uploaded_doc_id, last_uploaded_doc_name, last_upload_ts')
                 .eq('user_id', userId)
                 .single();
               
-              let queryWithContext = args.query;
-              if (!args.query && sessionData?.last_uploaded_doc_name) {
-                // User said "summarize this" without specifying - use recent upload
-                queryWithContext = `Summarize the document "${sessionData.last_uploaded_doc_name}"`;
+              console.log(`[${traceId}] Session data:`, sessionData);
+              
+              let queryWithContext = args.query || 'summarize';
+              
+              // If user uploaded doc within last 30 min and query is generic, use recent upload
+              if (sessionData?.last_uploaded_doc_name && sessionData.last_upload_ts) {
+                const uploadTime = new Date(sessionData.last_upload_ts).getTime();
+                const now = Date.now();
+                const thirtyMinutes = 30 * 60 * 1000;
+                
+                if (now - uploadTime < thirtyMinutes) {
+                  console.log(`[${traceId}] Using recently uploaded document: ${sessionData.last_uploaded_doc_name}`);
+                  if (!args.query || ['summarize', 'summary', 'what is it', 'tell me'].some(kw => args.query.toLowerCase().includes(kw))) {
+                    queryWithContext = `Summarize the key points from the document`;
+                  }
+                }
               }
               
               const docQnaResult = await supabase.functions.invoke('handle-document-qna', {
                 body: { intent: { query: queryWithContext }, userId, traceId }
               });
+              
+              console.log(`[${traceId}] Document Q&A result:`, docQnaResult.data);
               result = docQnaResult.data?.message || 'Document query completed';
               break;
 
