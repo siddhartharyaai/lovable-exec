@@ -187,8 +187,8 @@ INTENT DETECTION:
 - task_complete: "mark done", "complete task"
 - task_delete: "delete task"
 - web_search: "search for", "what is", "find information"
-- scrape_website: ONLY when explicit URL is provided or user says "scrape this URL"
-- query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc" (when user recently uploaded a document)
+- query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc", "summarize this", "what does this say" (when user recently uploaded a document)
+- scrape_website: ONLY when explicit URL with http/https is provided AND user wants to scrape/extract from a website
 - search_drive: "find in drive", "search my drive", "look for file", "what's in my drive"
 - read_drive_document: When user provides Google Drive URL or file ID
 - reminder_create: "remind me", "set reminder"
@@ -254,6 +254,31 @@ serve(async (req) => {
       })),
       { role: 'user', content: message }
     ];
+
+    // Add recent document upload context (CRITICAL for document queries)
+    if (sessionState?.last_uploaded_doc_name && sessionState?.last_upload_ts) {
+      const uploadTime = new Date(sessionState.last_upload_ts);
+      const now = new Date();
+      const minutesSinceUpload = (now.getTime() - uploadTime.getTime()) / (1000 * 60);
+      
+      if (minutesSinceUpload < 30) {
+        messages.splice(1, 0, {
+          role: 'system',
+          content: `🔴 CRITICAL CONTEXT: User just uploaded document "${sessionState.last_uploaded_doc_name}" ${Math.round(minutesSinceUpload)} minutes ago.
+
+IF the user says ANYTHING like:
+- "Summarize this document"
+- "What's in this document"
+- "Read this doc"
+- "Tell me about this file"
+- "Summarize this"
+- "What does this say"
+
+Then classify as "query_documents" intent with slots: { query: "summarize" }
+DO NOT classify as "scrape_website" - the document is already uploaded!`
+        });
+      }
+    }
 
     // Add session context if exists
     if (sessionState?.pending_intent) {
