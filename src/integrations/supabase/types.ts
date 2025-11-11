@@ -300,7 +300,7 @@ export type Database = {
           id: string
           media_url: string | null
           parsed_intent: Json | null
-          provider_sid: string
+          provider_sid: string | null
           updated_at: string
           user_id: string
         }
@@ -311,7 +311,7 @@ export type Database = {
           id?: string
           media_url?: string | null
           parsed_intent?: Json | null
-          provider_sid: string
+          provider_sid?: string | null
           updated_at?: string
           user_id: string
         }
@@ -322,7 +322,7 @@ export type Database = {
           id?: string
           media_url?: string | null
           parsed_intent?: Json | null
-          provider_sid?: string
+          provider_sid?: string | null
           updated_at?: string
           user_id?: string
         }

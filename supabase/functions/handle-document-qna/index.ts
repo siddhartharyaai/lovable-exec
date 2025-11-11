@@ -19,7 +19,8 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const query = intent.query || '';
+    const query = intent.query || 'summarize';
+    const documentName = intent.document_name || null;
 
     // Fetch user's documents
     const { data: documents, error: docsError } = await supabase
@@ -27,7 +28,7 @@ serve(async (req) => {
       .select('id, filename, content_text, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(20);
 
     if (docsError) {
       throw new Error(`Database error: ${docsError.message}`);
@@ -42,54 +43,122 @@ serve(async (req) => {
       );
     }
 
-    // Search for relevant sections using keyword matching
-    const keywords = query.toLowerCase().split(' ').filter((w: string) => w.length > 3);
-    const relevantSections: Array<{filename: string, content: string, score: number}> = [];
+    // Determine which document to work with
+    let targetDoc = null;
+    
+    // CRITICAL FIX: Check if query contains a document name or if documentName is provided
+    const queryLower = query.toLowerCase();
+    const isSummarizeRequest = queryLower.includes('summarize') || queryLower.includes('summary') || 
+                                queryLower.includes('what') || queryLower.includes('tell me');
+    
+    if (documentName) {
+      // Find document by exact name match
+      targetDoc = documents.find(d => d.filename.toLowerCase() === documentName.toLowerCase());
+    }
+    
+    if (!targetDoc) {
+      // Extract document name from query (e.g., "summarize NDA.pdf" -> "NDA.pdf")
+      const docNameMatch = query.match(/([a-zA-Z0-9_\-\.]+\.(pdf|docx|doc|txt))/i);
+      if (docNameMatch) {
+        const extractedName = docNameMatch[1];
+        targetDoc = documents.find(d => 
+          d.filename.toLowerCase().includes(extractedName.toLowerCase()) ||
+          extractedName.toLowerCase().includes(d.filename.toLowerCase())
+        );
+      }
+    }
+    
+    // If still no match and it's a summarize request, use the most recent document
+    if (!targetDoc && isSummarizeRequest) {
+      targetDoc = documents[0]; // Most recent
+      console.log(`[${traceId}] Using most recent document: ${targetDoc.filename}`);
+    }
 
-    documents.forEach(doc => {
-      const content = doc.content_text.toLowerCase();
-      let score = 0;
-      
-      keywords.forEach((keyword: string) => {
-        const occurrences = (content.match(new RegExp(keyword, 'g')) || []).length;
-        score += occurrences;
+    // If no document identified, do keyword search across all documents
+    if (!targetDoc) {
+      const keywords = query.toLowerCase().split(' ').filter((w: string) => w.length > 3);
+      const relevantSections: Array<{filename: string, content: string, score: number}> = [];
+
+      documents.forEach(doc => {
+        const content = doc.content_text.toLowerCase();
+        let score = 0;
+        
+        keywords.forEach((keyword: string) => {
+          const occurrences = (content.match(new RegExp(keyword, 'g')) || []).length;
+          score += occurrences;
+        });
+
+        if (score > 0) {
+          const firstKeyword = keywords[0];
+          const index = content.indexOf(firstKeyword);
+          if (index !== -1) {
+            const start = Math.max(0, index - 200);
+            const end = Math.min(content.length, index + 400);
+            const excerpt = doc.content_text.substring(start, end);
+            
+            relevantSections.push({
+              filename: doc.filename,
+              content: excerpt,
+              score
+            });
+          }
+        }
       });
 
-      if (score > 0) {
-        // Extract relevant paragraphs (±200 chars around first keyword)
-        const firstKeyword = keywords[0];
-        const index = content.indexOf(firstKeyword);
-        if (index !== -1) {
-          const start = Math.max(0, index - 200);
-          const end = Math.min(content.length, index + 400);
-          const excerpt = doc.content_text.substring(start, end);
-          
-          relevantSections.push({
-            filename: doc.filename,
-            content: excerpt,
-            score
-          });
-        }
+      if (relevantSections.length === 0) {
+        return new Response(
+          JSON.stringify({ 
+            message: `I couldn't find any relevant information about "${query}" in your uploaded documents. Try rephrasing your question or upload more documents.` 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
-    });
 
-    if (relevantSections.length === 0) {
+      relevantSections.sort((a, b) => b.score - a.score);
+      const topSections = relevantSections.slice(0, 3);
+      const contextForAI = topSections.map((section, i) => 
+        `[Document: ${section.filename}]\n${section.content}`
+      ).join('\n\n---\n\n');
+
+      // Use AI to answer based on excerpts
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document excerpts. Keep responses concise (max 200 words).`
+            },
+            {
+              role: 'user',
+              content: `Documents:\n${contextForAI}\n\nQuestion: ${query}`
+            }
+          ],
+          max_tokens: 500
+        })
+      });
+
+      if (!aiResponse.ok) throw new Error('AI failed');
+      const aiData = await aiResponse.json();
+      const answer = aiData.choices[0]?.message?.content || 'Unable to generate answer';
+      const citations = topSections.map(s => `📄 ${s.filename}`).join('\n');
+      const message = `${answer}\n\n**Sources:**\n${citations}`;
+
       return new Response(
-        JSON.stringify({ 
-          message: `I couldn't find any relevant information about "${query}" in your uploaded documents. Try rephrasing your question or upload more documents.` 
-        }),
+        JSON.stringify({ message }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Sort by relevance
-    relevantSections.sort((a, b) => b.score - a.score);
-    const topSections = relevantSections.slice(0, 3);
-
-    // Use AI to summarize and answer
-    const contextForAI = topSections.map((section, i) => 
-      `[Document: ${section.filename}]\n${section.content}`
-    ).join('\n\n---\n\n');
+    // We have a target document - use its FULL content
+    console.log(`[${traceId}] Processing document: ${targetDoc.filename} (${targetDoc.content_text.length} chars)`);
+    const contextForAI = `[Document: ${targetDoc.filename}]\n\n${targetDoc.content_text}`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
@@ -122,8 +191,7 @@ serve(async (req) => {
     const aiData = await aiResponse.json();
     const answer = aiData.choices[0]?.message?.content || 'Unable to generate answer';
 
-    const citations = topSections.map(s => `📄 ${s.filename}`).join('\n');
-    const message = `${answer}\n\n**Sources:**\n${citations}`;
+    const message = `${answer}\n\n**Source:** 📄 ${targetDoc.filename}`;
 
     return new Response(
       JSON.stringify({ message }),
