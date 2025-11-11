@@ -91,9 +91,10 @@ const INTENT_SCHEMAS: Record<string, any> = {
   },
   query_documents: {
     critical: [],
-    optional: ["query"],
+    optional: ["query", "document_name"],
     defaults: { query: "summarize" },
-    clarify_templates: {}
+    clarify_templates: {},
+    description: "Query or summarize a recently uploaded document. Use when user says 'summarize this', 'what's in this document', 'read this doc'. Document context is automatically detected from recent uploads."
   },
   search_drive: {
     critical: ["query"],
@@ -187,8 +188,8 @@ INTENT DETECTION:
 - task_complete: "mark done", "complete task"
 - task_delete: "delete task"
 - web_search: "search for", "what is", "find information"
-- query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc", "summarize this", "what does this say" (when user recently uploaded a document)
-- scrape_website: ONLY when explicit URL with http/https is provided AND user wants to scrape/extract from a website
+- query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc", "summarize this", "what does this say", "summarize it", "what's in it" (when user recently uploaded a document OR says "this")
+- scrape_website: ONLY when explicit URL with http/https is provided AND NO recent document upload AND user wants to scrape/extract from a website. If user says "this" and there's a recent document, use query_documents NOT scrape_website!
 - search_drive: "find in drive", "search my drive", "look for file", "what's in my drive"
 - read_drive_document: When user provides Google Drive URL or file ID
 - reminder_create: "remind me", "set reminder"
@@ -255,27 +256,47 @@ serve(async (req) => {
       { role: 'user', content: message }
     ];
 
-    // Add recent document upload context (CRITICAL for document queries)
-    if (sessionState?.last_uploaded_doc_name && sessionState?.last_upload_ts) {
-      const uploadTime = new Date(sessionState.last_upload_ts);
+    // CRITICAL: Check for recently uploaded documents in database (not just session state)
+    // This handles cases where session_state might be empty or stale
+    const { data: recentDocs } = await supabase
+      .from('user_documents')
+      .select('id, filename, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (recentDocs && recentDocs.length > 0) {
+      const uploadTime = new Date(recentDocs[0].created_at);
       const now = new Date();
       const minutesSinceUpload = (now.getTime() - uploadTime.getTime()) / (1000 * 60);
       
-      if (minutesSinceUpload < 30) {
+      // Extended window: 2 hours instead of 30 minutes
+      if (minutesSinceUpload < 120) {
+        console.log(`[${traceId}] 🔴 RECENT DOCUMENT DETECTED: "${recentDocs[0].filename}" (${Math.round(minutesSinceUpload)} min ago)`);
         messages.splice(1, 0, {
           role: 'system',
-          content: `🔴 CRITICAL CONTEXT: User just uploaded document "${sessionState.last_uploaded_doc_name}" ${Math.round(minutesSinceUpload)} minutes ago.
+          content: `🔴🔴🔴 CRITICAL DOCUMENT CONTEXT 🔴🔴🔴
 
-IF the user says ANYTHING like:
-- "Summarize this document"
-- "What's in this document"
-- "Read this doc"
-- "Tell me about this file"
-- "Summarize this"
-- "What does this say"
+The user uploaded a document "${recentDocs[0].filename}" ${Math.round(minutesSinceUpload)} minutes ago.
 
-Then classify as "query_documents" intent with slots: { query: "summarize" }
-DO NOT classify as "scrape_website" - the document is already uploaded!`
+MANDATORY CLASSIFICATION RULES:
+1. IF user says ANY of these phrases → MUST classify as "query_documents":
+   - "Summarize this document"
+   - "Summarize this"
+   - "What's in this document"
+   - "What's in this"
+   - "Read this doc"
+   - "Tell me about this file"
+   - "What does this say"
+   - "Summarize the document"
+   - ANY variation with "this" referring to a document
+
+2. DO NOT classify as "scrape_website" - the document is already uploaded!
+3. DO NOT ask for URL - we have the document in database!
+4. Set slots: { query: "summarize", document_name: "${recentDocs[0].filename}" }
+
+DOCUMENT ID: ${recentDocs[0].id}
+UPLOADED: ${recentDocs[0].created_at}`
         });
       }
     }
