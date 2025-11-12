@@ -277,26 +277,32 @@ serve(async (req) => {
           role: 'system',
           content: `🔴🔴🔴 CRITICAL DOCUMENT CONTEXT 🔴🔴🔴
 
-The user uploaded a document "${recentDocs[0].filename}" ${Math.round(minutesSinceUpload)} minutes ago.
+The user uploaded a document "${recentDocs[0].filename}" ${Math.round(minutesSinceUpload)} minutes ago (ID: ${recentDocs[0].id}).
 
-MANDATORY CLASSIFICATION RULES:
-1. IF user says ANY of these phrases → MUST classify as "query_documents":
-   - "Summarize this document"
-   - "Summarize this"
-   - "What's in this document"
-   - "What's in this"
-   - "Read this doc"
-   - "Tell me about this file"
-   - "What does this say"
-   - "Summarize the document"
-   - ANY variation with "this" referring to a document
+MANDATORY CLASSIFICATION RULES (NON-NEGOTIABLE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-2. DO NOT classify as "scrape_website" - the document is already uploaded!
-3. DO NOT ask for URL - we have the document in database!
-4. Set slots: { query: "summarize", document_name: "${recentDocs[0].filename}" }
+IF the user's message contains ANY of these patterns, you MUST classify as "query_documents":
+   ✓ "Summarize this document"
+   ✓ "Summarize this"  
+   ✓ "Summarize the document"
+   ✓ "Show me the summary"
+   ✓ "What's in this document"
+   ✓ "What's in this"
+   ✓ "What's in the document"
+   ✓ "Read this doc"
+   ✓ "Tell me about this file"
+   ✓ "What does this say"
+   ✓ "What does the document say"
+   ✓ ANY phrase containing "this" OR "the document" referring to uploaded content
 
-DOCUMENT ID: ${recentDocs[0].id}
-UPLOADED: ${recentDocs[0].created_at}`
+CRITICAL RULES:
+1. DO NOT classify as "scrape_website" - document is ALREADY uploaded to database!
+2. DO NOT ask for URL - we have the document stored!
+3. DO NOT ask for document name - it's: "${recentDocs[0].filename}"
+4. ALWAYS set intent to "query_documents" with slots: { "query": "summarize", "document_name": "${recentDocs[0].filename}" }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
         });
       }
     }

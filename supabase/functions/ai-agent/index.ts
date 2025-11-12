@@ -840,37 +840,38 @@ serve(async (req) => {
       .eq('user_id', userId)
       .single();
 
-    // Build conversation context with aggressive filtering to prevent contamination
+    // Build conversation context with CRITICAL isolation to prevent response contamination
     const now = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
     const istTime = new Date(now.getTime() + istOffset);
-    let currentContextMsg = `CURRENT REQUEST CONTEXT: It is now ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. User just asked: "${message}". Focus ONLY on this question.`;
+    let currentContextMsg = `🔴 CRITICAL INSTRUCTION 🔴
+You are responding to a NEW request. DO NOT repeat or reference ANY previous responses.
+
+CURRENT REQUEST CONTEXT:
+- Time: ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
+- User's CURRENT question: "${message}"
+- Focus ONLY on answering THIS specific question
+- DO NOT include information from previous queries unless explicitly relevant
+
+If the user's current question is about a different topic, respond ONLY to the new topic.`;
     
     // Add recent context if available
     if (sessionState?.last_uploaded_doc_name && sessionState?.last_upload_ts) {
       const uploadTime = new Date(sessionState.last_upload_ts);
       const minutesAgo = Math.floor((now.getTime() - uploadTime.getTime()) / 60000);
-      if (minutesAgo < 30) { // Only mention if uploaded in last 30 minutes
+      if (minutesAgo < 120) { // Extended to 2 hours
         currentContextMsg += `\n\nRECENT CONTEXT: User uploaded document "${sessionState.last_uploaded_doc_name}" ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago. If they refer to "this document", "the file", or "it", they mean this uploaded document.`;
       }
     }
     
+    // CRITICAL FIX: Only include the last 2 conversation turns (4 messages max) to prevent contamination
+    // This ensures previous responses don't bleed into new contexts
     const relevantHistory = (conversationHistory || [])
-      .slice(-30) // Look at last 30 messages
-      .filter((msg: any, idx: number, arr: any[]) => {
-        // Always keep user messages (they provide context)
-        if (msg.role === 'user') return true;
-        
-        // For assistant messages:
-        // Skip the last 2 assistant messages to prevent repetition
-        if (msg.role === 'assistant') {
-          const isRecent = idx >= arr.length - 2;
-          return !isRecent;
-        }
-        
-        return false;
+      .slice(-4) // ONLY last 4 messages (2 turns: user->assistant->user->assistant)
+      .filter((msg: any) => {
+        // Include both user and assistant messages, but ONLY the most recent ones
+        return true;
       })
-      .slice(-6); // Keep only last 6 relevant messages (3 turns of conversation)
 
     let messages: any[] = [
       { role: 'system', content: systemPrompt },

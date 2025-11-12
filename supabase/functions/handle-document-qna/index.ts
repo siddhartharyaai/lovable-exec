@@ -68,10 +68,19 @@ serve(async (req) => {
       }
     }
     
-    // If still no match and it's a summarize request, use the most recent document
-    if (!targetDoc && isSummarizeRequest) {
-      targetDoc = documents[0]; // Most recent
-      console.log(`[${traceId}] Using most recent document: ${targetDoc.filename}`);
+    // CRITICAL FIX: If no exact match found BUT user is asking to summarize "this" or "the document"
+    // AND there's a recent upload (< 2 hours), use the most recent document
+    if (!targetDoc) {
+      const recentUpload = documents[0];
+      const uploadTime = new Date(recentUpload.created_at);
+      const now = new Date();
+      const minutesSinceUpload = (now.getTime() - uploadTime.getTime()) / (1000 * 60);
+      
+      // If recent upload exists AND user is asking to summarize
+      if (minutesSinceUpload < 120 && isSummarizeRequest) {
+        targetDoc = recentUpload;
+        console.log(`[${traceId}] ✅ Auto-detected recent document: ${targetDoc.filename} (uploaded ${Math.round(minutesSinceUpload)} min ago)`);
+      }
     }
 
     // If no document identified, do keyword search across all documents
