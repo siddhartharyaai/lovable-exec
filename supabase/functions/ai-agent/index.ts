@@ -910,16 +910,51 @@ If the user's current question is about a different topic, respond ONLY to the n
         throw new Error(`Unknown forced action: ${forcedIntent.action}`);
       }
     } else {
-      // If routedIntent is provided, add it as context before the user message
-      if (routedIntent) {
-        // Insert routing context before the user message (which is already added)
-        messages.splice(messages.length - 1, 0, {
-          role: 'system',
-          content: `CONTEXT: The routing layer has identified this intent: ${JSON.stringify(routedIntent)}. Use these extracted slots: ${JSON.stringify(routedIntent.slots)}`
-        });
+      // CRITICAL FIX: If routedIntent is provided, FORCE execution of that tool
+      if (routedIntent && routedIntent.intent) {
+        console.log(`[${traceId}] 🔴 FORCING tool execution from routed intent:`, routedIntent.intent);
+        
+        // Map intent names to tool names
+        const intentToTool: Record<string, string> = {
+          'query_documents': 'query_documents',
+          'web_search': 'search_web',
+          'scrape_website': 'scrape_website',
+          'gmail_search': 'search_emails',
+          'gmail_summarize_unread': 'summarize_emails',
+          'calendar_read': 'read_calendar',
+          'create_calendar_event': 'create_calendar_event',
+          'create_reminder': 'create_reminder',
+          'read_tasks': 'read_tasks',
+          'create_task': 'create_task',
+          'search_contacts': 'search_contacts',
+          'search_drive': 'search_drive'
+        };
+        
+        const toolName = intentToTool[routedIntent.intent];
+        if (toolName) {
+          // Create synthetic tool call with extracted slots
+          aiMessage = {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+              id: `call_routed_${Date.now()}`,
+              type: 'function',
+              function: {
+                name: toolName,
+                arguments: JSON.stringify(routedIntent.slots || {})
+              }
+            }]
+          };
+          console.log(`[${traceId}] ✅ Forced tool call created:`, toolName);
+        } else {
+          console.log(`[${traceId}] ⚠️ Unknown intent, falling back to AI: ${routedIntent.intent}`);
+          // Fall through to normal AI call
+        }
       }
 
-      // First AI call - let it decide which tools to use
+      // Only call AI if we didn't force a tool execution
+      if (!aiMessage) {
+        // First AI call - let it decide which tools to use
       const initialResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -940,10 +975,11 @@ If the user's current question is about a different topic, respond ONLY to the n
         throw new Error('AI Gateway error');
       }
 
-      const aiData = await initialResponse.json();
-      aiMessage = aiData.choices[0].message;
+        const aiData = await initialResponse.json();
+        aiMessage = aiData.choices[0].message;
 
-      console.log(`[${traceId}] AI decision:`, JSON.stringify(aiMessage, null, 2));
+        console.log(`[${traceId}] AI decision:`, JSON.stringify(aiMessage, null, 2));
+      }
     }
 
     // Safety check: Force web search for queries about live/current information

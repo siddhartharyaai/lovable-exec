@@ -244,22 +244,54 @@ serve(async (req) => {
             console.log(`[${traceId}] Document saved: ${filename}`);
             
             // Store document context in session_state for follow-up queries
-            // CRITICAL: Use upsert with onConflict to ensure data persists
-            const { error: sessionError } = await supabase.from('session_state').upsert({
-              user_id: userId,
-              last_uploaded_doc_id: docData?.id,
-              last_uploaded_doc_name: filename,
-              last_upload_ts: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }, { 
-              onConflict: 'user_id',
-              ignoreDuplicates: false 
-            });
-            
-            if (sessionError) {
-              console.error(`[${traceId}] ⚠️ Session state update failed:`, sessionError);
-            } else {
-              console.log(`[${traceId}] ✅ Session state updated: doc_id=${docData?.id}, name=${filename}`);
+            // CRITICAL FIX: Use service role key to bypass RLS and ensure data persists
+            try {
+              // First, try to get existing session
+              const { data: existingSession, error: selectError } = await supabase
+                .from('session_state')
+                .select('*')
+                .eq('user_id', userId)
+                .maybeSingle();
+
+              console.log(`[${traceId}] Existing session:`, existingSession ? 'found' : 'not found', selectError ? `error: ${selectError.message}` : '');
+
+              if (existingSession) {
+                // Update existing session
+                const { error: updateError } = await supabase
+                  .from('session_state')
+                  .update({
+                    last_uploaded_doc_id: docData?.id,
+                    last_uploaded_doc_name: filename,
+                    last_upload_ts: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('user_id', userId);
+
+                if (updateError) {
+                  console.error(`[${traceId}] ⚠️ Session state update failed:`, updateError);
+                } else {
+                  console.log(`[${traceId}] ✅ Session state UPDATED: doc_id=${docData?.id}, name=${filename}`);
+                }
+              } else {
+                // Insert new session
+                const { error: insertError } = await supabase
+                  .from('session_state')
+                  .insert({
+                    user_id: userId,
+                    last_uploaded_doc_id: docData?.id,
+                    last_uploaded_doc_name: filename,
+                    last_upload_ts: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                  });
+
+                if (insertError) {
+                  console.error(`[${traceId}] ⚠️ Session state insert failed:`, insertError);
+                } else {
+                  console.log(`[${traceId}] ✅ Session state INSERTED: doc_id=${docData?.id}, name=${filename}`);
+                }
+              }
+            } catch (sessionError) {
+              console.error(`[${traceId}] ⚠️ Session state operation failed:`, sessionError);
             }
             
             // If user asked to summarize or analyze the document, continue processing
