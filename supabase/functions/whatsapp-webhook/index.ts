@@ -1,29 +1,78 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getDocument } from 'https://esm.sh/pdfjs-serverless@0.2.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Use Lovable AI to extract text from PDF via vision
+// Helper function to convert ArrayBuffer to base64 without stack overflow
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192; // Process in 8KB chunks to avoid stack overflow
+  let binary = '';
+  
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  
+  return btoa(binary);
+}
+
+// Extract text from documents using appropriate method
 async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, traceId: string): Promise<string> {
   console.log(`[${traceId}] === DOCUMENT EXTRACTION START ===`);
   console.log(`[${traceId}] MIME type: ${mimeType}`);
   console.log(`[${traceId}] Size: ${buffer.byteLength} bytes`);
   
   try {
-    // Try 1: Lovable AI vision for PDFs and images
-    if (mimeType === 'application/pdf' || mimeType.startsWith('image/')) {
-      console.log(`[${traceId}] Trying Lovable AI vision extraction...`);
+    // Method 1: PDF parsing using pdfjs-serverless library
+    if (mimeType === 'application/pdf') {
+      console.log(`[${traceId}] Using pdfjs-serverless library for PDF extraction...`);
+      try {
+        const document = await getDocument({
+          data: new Uint8Array(buffer),
+          useSystemFonts: true,
+        }).promise;
+        
+        const numPages = document.numPages;
+        console.log(`[${traceId}] PDF has ${numPages} pages`);
+        
+        const textParts: string[] = [];
+        for (let i = 1; i <= numPages; i++) {
+          const page = await document.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          textParts.push(pageText);
+        }
+        
+        const extractedText = textParts.join('\n\n');
+        
+        if (extractedText && extractedText.length > 100) {
+          console.log(`[${traceId}] ✅ PDF parse success: ${extractedText.length} chars, ${numPages} pages`);
+          return extractedText;
+        } else {
+          console.warn(`[${traceId}] PDF parse returned insufficient text: ${extractedText.length} chars`);
+        }
+      } catch (pdfError) {
+        console.error(`[${traceId}] PDF parse failed:`, pdfError);
+        // Fall through to other methods
+      }
+    }
+    
+    // Method 2: AI vision for images only
+    if (mimeType.startsWith('image/')) {
+      console.log(`[${traceId}] Trying Lovable AI vision extraction for image...`);
       const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
       
       if (!lovableApiKey) {
         console.warn(`[${traceId}] LOVABLE_API_KEY not configured, skipping AI extraction`);
       } else {
         try {
-          // Convert buffer to base64
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+          // Convert buffer to base64 safely (no stack overflow)
+          const base64 = arrayBufferToBase64(buffer);
           const dataUrl = `data:${mimeType};base64,${base64}`;
           
           console.log(`[${traceId}] Calling Lovable AI vision API...`);
@@ -41,7 +90,7 @@ async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, tr
                   content: [
                     {
                       type: 'text',
-                      text: 'Extract ALL text content from this document. Include headings, paragraphs, tables, lists - everything. Preserve structure and formatting. Return ONLY the extracted text.'
+                      text: 'Extract ALL text content from this image. Include all visible text, headings, labels, captions - everything readable. Return ONLY the extracted text.'
                     },
                     {
                       type: 'image_url',
@@ -49,7 +98,8 @@ async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, tr
                     }
                   ]
                 }
-              ]
+              ],
+              max_tokens: 2000
             })
           });
 
@@ -57,7 +107,7 @@ async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, tr
             const data = await response.json();
             const extractedText = data.choices?.[0]?.message?.content || '';
             
-            if (extractedText && extractedText.length > 100) {
+            if (extractedText && extractedText.length > 50) {
               console.log(`[${traceId}] ✅ AI extraction success: ${extractedText.length} chars`);
               return extractedText;
             } else {
