@@ -191,7 +191,7 @@ INTENT DETECTION:
 - query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc", "summarize this", "what does this say", "summarize it", "what's in it" (when user recently uploaded a document OR says "this")
 - scrape_website: ONLY when explicit URL with http/https is provided AND NO recent document upload AND user wants to scrape/extract from a website. If user says "this" and there's a recent document, use query_documents NOT scrape_website!
 - search_drive: "find in drive", "search my drive", "look for file", "what's in my drive"
-- read_drive_document: When user provides Google Drive URL or file ID
+- read_drive_document: When user provides Google Drive URL, file ID, OR specifies a file name after a recent drive search (check session_state for drive_search_results within last 10 minutes)
 - reminder_create: "remind me", "set reminder"
 
 CONVERSATION CONTEXT AWARENESS (CRITICAL):
@@ -265,6 +265,13 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(1);
     
+    // Check for recent Drive searches to enable file name-based document reading
+    const { data: sessionData } = await supabase
+      .from('session_state')
+      .select('drive_search_results, drive_search_timestamp')
+      .eq('user_id', userId)
+      .single();
+    
     if (recentDocs && recentDocs.length > 0) {
       const uploadTime = new Date(recentDocs[0].created_at);
       const now = new Date();
@@ -294,14 +301,44 @@ IF the user's message contains ANY of these patterns, you MUST classify as "quer
    ✓ "Tell me about this file"
    ✓ "What does this say"
    ✓ "What does the document say"
-   ✓ ANY phrase containing "this" OR "the document" referring to uploaded content
+   ✓ "Summarize it"
+   ✓ "What's in it"
+   ✓ Any question about "this" or "the document" or "the file"
 
-CRITICAL RULES:
-1. DO NOT classify as "scrape_website" - document is ALREADY uploaded to database!
-2. DO NOT ask for URL - we have the document stored!
-3. DO NOT ask for document name - it's: "${recentDocs[0].filename}"
-4. ALWAYS set intent to "query_documents" with slots: { "query": "summarize", "document_name": "${recentDocs[0].filename}" }
+This rule overrides ALL other intent detection. Even if the message could be interpreted as another intent, if it matches ANY of the above patterns, you MUST route to "query_documents".
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+        });
+      }
+    }
+    
+    // Check for recent Drive search to enable file name follow-up
+    if (sessionData?.drive_search_results && sessionData.drive_search_timestamp) {
+      const searchTime = new Date(sessionData.drive_search_timestamp);
+      const now = new Date();
+      const minutesSinceSearch = (now.getTime() - searchTime.getTime()) / (1000 * 60);
+      
+      // 10 minute window for Drive file follow-up
+      if (minutesSinceSearch < 10) {
+        console.log(`[${traceId}] 🔵 RECENT DRIVE SEARCH DETECTED (${Math.round(minutesSinceSearch)} min ago)`);
+        const fileNames = Object.keys(sessionData.drive_search_results);
+        messages.splice(1, 0, {
+          role: 'system',
+          content: `🔵🔵🔵 DRIVE SEARCH CONTEXT 🔵🔵🔵
 
+The user recently searched Google Drive (${Math.round(minutesSinceSearch)} minutes ago) and found these files:
+${fileNames.map(name => `• ${name}`).join('\n')}
+
+DRIVE FILE FOLLOW-UP RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IF the user mentions any of these file names (even partial matches), classify as "read_drive_document":
+   • Extract the file name from the user's message
+   • Set file_name slot to the matched file name
+   • The system will automatically map the name to file_id from the search results
+
+Examples:
+   "Charterpro ai.docx" → read_drive_document with file_name="charterpro ai.docx"
+   "Read the first one" → read_drive_document with file_name="${fileNames[0] || 'first'}"
+   "Summarize CharterPro" → read_drive_document with file_name="charterpro"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
         });
       }

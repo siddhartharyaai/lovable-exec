@@ -1372,8 +1372,45 @@ If the user's current question is about a different topic, respond ONLY to the n
               break;
 
             case 'read_drive_document':
-              // Extract fileId from ALL Google Drive URL formats
+              // Extract fileId from ALL sources: direct ID, URL, or file name from recent search
               let fileId = args.file_id || '';
+              
+              // Check if user provided file name instead of ID (from recent Drive search)
+              if (!fileId && args.file_name) {
+                const { data: sessionData } = await supabase
+                  .from('session_state')
+                  .select('drive_search_results, drive_search_timestamp')
+                  .eq('user_id', userId)
+                  .single();
+                
+                if (sessionData?.drive_search_results) {
+                  const searchTime = new Date(sessionData.drive_search_timestamp);
+                  const minutesSinceSearch = (Date.now() - searchTime.getTime()) / (1000 * 60);
+                  
+                  if (minutesSinceSearch < 10) {
+                    // Fuzzy match file name from search results
+                    const fileName = args.file_name.toLowerCase();
+                    const fileMap = sessionData.drive_search_results as Record<string, string>;
+                    
+                    // Try exact match first
+                    if (fileMap[fileName]) {
+                      fileId = fileMap[fileName];
+                      console.log(`[${traceId}] Matched file name "${fileName}" to ID: ${fileId}`);
+                    } else {
+                      // Try partial match
+                      const matchedName = Object.keys(fileMap).find(name => 
+                        name.includes(fileName) || fileName.includes(name)
+                      );
+                      if (matchedName) {
+                        fileId = fileMap[matchedName];
+                        console.log(`[${traceId}] Partial matched "${fileName}" to "${matchedName}" (ID: ${fileId})`);
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // Extract fileId from URL patterns if still not found
               const drivePatterns = [
                 // Google Drive file links
                 /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,
