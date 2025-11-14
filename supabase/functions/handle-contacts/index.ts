@@ -81,38 +81,53 @@ serve(async (req) => {
 
     if (results.length === 0) {
       return new Response(JSON.stringify({ 
-        message: `❌ No contact found for "${searchQuery}"`
+        message: `❌ No contact found for "${searchQuery}"`,
+        contacts: []
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Format the first matching contact
-    const contact = results[0].person;
-    const contactName = contact.names?.[0]?.displayName || 'Unknown';
-    const contactEmails = contact.emailAddresses?.map((e: any) => e.value) || [];
-    const contactPhones = contact.phoneNumbers?.map((p: any) => p.value) || [];
-    const contactOrg = contact.organizations?.[0]?.name || '';
+    // Format ALL matching contacts as structured data
+    const contacts = results.map((result: any) => {
+      const person = result.person;
+      return {
+        name: person.names?.[0]?.displayName || 'Unknown',
+        emails: person.emailAddresses?.map((e: any) => e.value) || [],
+        phones: person.phoneNumbers?.map((p: any) => p.value) || [],
+        organization: person.organizations?.[0]?.name || ''
+      };
+    });
 
-    let message = `👤 **${contactName}**\n\n`;
+    // Format display message for top 3 contacts
+    const topContacts = contacts.slice(0, 3);
+    let message = `Found ${contacts.length} contact${contacts.length > 1 ? 's' : ''} matching "${searchQuery}":\n\n`;
     
-    if (contactEmails.length > 0) {
-      message += `📧 ${contactEmails.join(', ')}\n`;
-    }
-    
-    if (contactPhones.length > 0) {
-      message += `📞 ${contactPhones.join(', ')}\n`;
-    }
-    
-    if (contactOrg) {
-      message += `🏢 ${contactOrg}\n`;
+    topContacts.forEach((contact: any, idx: number) => {
+      message += `${idx + 1}. **${contact.name}**\n`;
+      if (contact.emails.length > 0) {
+        message += `   📧 ${contact.emails.join(', ')}\n`;
+      }
+      if (contact.phones.length > 0) {
+        message += `   📞 ${contact.phones.join(', ')}\n`;
+      }
+      if (contact.organization) {
+        message += `   🏢 ${contact.organization}\n`;
+      }
+      message += '\n';
+    });
+
+    if (contacts.length > 3) {
+      message += `_...and ${contacts.length - 3} more match(es)_\n\n`;
+      message += `Which one would you like to use? You can reply with the number or name.`;
+    } else if (contacts.length > 1) {
+      message += `Which one would you like to use? Reply with the number or name.`;
     }
 
-    if (results.length > 1) {
-      message += `\n_Found ${results.length - 1} more match(es)_`;
-    }
-
-    return new Response(JSON.stringify({ message }), {
+    return new Response(JSON.stringify({ 
+      message,
+      contacts // Return structured array for storage in session_state
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
