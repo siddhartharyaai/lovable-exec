@@ -510,10 +510,12 @@ serve(async (req) => {
       console.log(`[${traceId}] Falling back to AI agent orchestrator...`);
       const agentResult = await supabase.functions.invoke('ai-agent', {
         body: { 
-          message: translatedBody,
+          userMessage: translatedBody,
+          history: conversationHistory,
+          sessionState: sessionState,
           userId: userId,
-          conversationHistory: conversationHistory,
-          traceId: traceId
+          traceId: traceId,
+          nowISO: new Date().toISOString()
         }
       });
       
@@ -536,11 +538,13 @@ serve(async (req) => {
         // Execute the confirmed action via ai-agent with forcedIntent
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
-            message: translatedBody,
+            userMessage: translatedBody,
+            history: conversationHistory,
+            sessionState: sessionState,
             userId: userId,
-            conversationHistory: conversationHistory,
             forcedIntent: sessionState.confirmation_pending,
-            traceId: traceId
+            traceId: traceId,
+            nowISO: new Date().toISOString()
           }
         });
 
@@ -577,10 +581,13 @@ serve(async (req) => {
         // Call ai-agent with document context
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
-            message: translatedBody,
+            userMessage: translatedBody,
+            history: conversationHistory,
+            sessionState: sessionState,
             userId: userId,
-            conversationHistory: conversationHistory,
-            traceId: traceId
+            traceId: traceId,
+            nowISO: new Date().toISOString(),
+            classifiedIntent: 'doc_action'
           }
         });
 
@@ -614,10 +621,13 @@ serve(async (req) => {
 
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
-            message: translatedBody,
+            userMessage: translatedBody,
+            history: conversationHistory,
+            sessionState: sessionState,
             userId: userId,
-            conversationHistory: conversationHistory,
-            traceId: traceId
+            traceId: traceId,
+            nowISO: new Date().toISOString(),
+            classifiedIntent: classification.intent_type
           }
         });
 

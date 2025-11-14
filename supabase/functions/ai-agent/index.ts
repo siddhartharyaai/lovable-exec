@@ -618,64 +618,141 @@ serve(async (req) => {
   }
 
   try {
-    const { message, userId, conversationHistory, traceId, forcedIntent, routedIntent, isConversational } = await req.json();
+    const { 
+      userMessage, 
+      message, 
+      userId, 
+      conversationHistory, 
+      history,
+      sessionState,
+      traceId, 
+      forcedIntent, 
+      routedIntent, 
+      isConversational,
+      nowISO,
+      classifiedIntent 
+    } = await req.json();
     
-    console.log(`[${traceId}] AI Agent processing: "${message.substring(0, 100)}..."${forcedIntent ? ' [FORCED INTENT]' : ''}${routedIntent ? ' [ROUTED INTENT]' : ''}`);
+    // Support both old and new parameter names for backwards compatibility
+    const finalMessage = userMessage || message;
+    const finalHistory = history || conversationHistory || [];
+    const finalSessionState = sessionState || {};
+    
+    console.log(`[${traceId}] AI Agent processing: "${finalMessage.substring(0, 100)}..."${forcedIntent ? ' [FORCED INTENT]' : ''}${routedIntent ? ' [ROUTED INTENT]' : ''}${classifiedIntent ? ` [CLASSIFIED: ${classifiedIntent}]` : ''}`);
 
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // Hard rule: If last_doc exists and classified as doc_action, force document handling
+    const lastDoc = finalSessionState?.last_doc;
+    const isDocAction = classifiedIntent === 'doc_action' || 
+                       (lastDoc && (
+                         finalMessage.toLowerCase().includes('summarize') ||
+                         finalMessage.toLowerCase().includes('summary') ||
+                         finalMessage.toLowerCase().includes('what does this say') ||
+                         finalMessage.toLowerCase().includes('extract task') ||
+                         finalMessage.toLowerCase().includes('clean this') ||
+                         finalMessage.toLowerCase().includes('tell me about this') ||
+                         finalMessage.toLowerCase().includes("what's in")
+                       ));
+    
+    if (isDocAction && lastDoc) {
+      console.log(`[${traceId}] 📄 Hard rule triggered: Document action on last_doc (${lastDoc.title})`);
+      
+      // Call document_qna directly and return
+      const { data: docResult, error: docError } = await supabase.functions.invoke('handle-document-qna', {
+        body: {
+          intent: {
+            operation: 'summarize',
+            documentName: lastDoc.title
+          },
+          userId,
+          traceId
+        }
+      });
+      
+      if (docError) {
+        const reply = `I tried to summarize "${lastDoc.title}" but encountered an error. Please try uploading the document again.`;
+        return new Response(JSON.stringify({ reply }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } else {
+        const reply = docResult.answer || `Here's the summary of "${lastDoc.title}":\n\n${docResult.summary || 'Summary not available.'}`;
+        return new Response(JSON.stringify({ reply }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     // Build dynamic system prompt with learned patterns
     const systemPrompt = await buildSystemPrompt(supabase, userId);
 
-    // Get session state for additional context
-    const { data: sessionState } = await supabase
-      .from('session_state')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
+    // Get session state for additional context (if not already provided)
+    let sessionData = finalSessionState;
+    if (!sessionData || Object.keys(sessionData).length === 0) {
+      const { data } = await supabase
+        .from('session_state')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      sessionData = data || {};
+    }
 
-    // Build conversation context with CRITICAL isolation to prevent response contamination
-    const now = new Date();
+    // Build conversation context
+    const now = nowISO ? new Date(nowISO) : new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
     const istTime = new Date(now.getTime() + istOffset);
-    let currentContextMsg = `🔴 CRITICAL INSTRUCTION 🔴
-You are responding to a NEW request. DO NOT repeat or reference ANY previous responses.
-
-CURRENT REQUEST CONTEXT:
-- Time: ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
-- User's CURRENT question: "${message}"
-- Focus ONLY on answering THIS specific question
-- DO NOT include information from previous queries unless explicitly relevant
-
-If the user's current question is about a different topic, respond ONLY to the new topic.`;
     
-    // Add recent context if available
-    if (sessionState?.last_uploaded_doc_name && sessionState?.last_upload_ts) {
-      const uploadTime = new Date(sessionState.last_upload_ts);
-      const minutesAgo = Math.floor((now.getTime() - uploadTime.getTime()) / 60000);
-      if (minutesAgo < 120) { // Extended to 2 hours
-        currentContextMsg += `\n\nRECENT CONTEXT: User uploaded document "${sessionState.last_uploaded_doc_name}" ${minutesAgo} minute${minutesAgo !== 1 ? 's' : ''} ago. If they refer to "this document", "the file", or "it", they mean this uploaded document.`;
-      }
+    // Build context message including session state
+    let currentContextMsg = `CURRENT CONTEXT:
+- Time: ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
+- User's request: "${finalMessage}"
+- Session state: ${JSON.stringify(sessionData || {})}
+`;
+    
+    // Add document context if available
+    if (lastDoc) {
+      currentContextMsg += `\nIMPORTANT: User has a document loaded: "${lastDoc.title}" (uploaded ${lastDoc.uploaded_at})`;
+      currentContextMsg += `\nIf they refer to "this", "it", "the document", they mean this file.`;
     }
     
-    // CRITICAL FIX: Only include the last 2 conversation turns (4 messages max) to prevent contamination
-    // This ensures previous responses don't bleed into new contexts
-    const relevantHistory = (conversationHistory || [])
-      .slice(-4) // ONLY last 4 messages (2 turns: user->assistant->user->assistant)
-      .filter((msg: any) => {
-        // Include both user and assistant messages, but ONLY the most recent ones
-        return true;
-      })
+    // Add confirmation pending context
+    if (sessionData?.confirmation_pending) {
+      currentContextMsg += `\n\nCONFIRMATION PENDING: ${JSON.stringify(sessionData.confirmation_pending)}`;
+      currentContextMsg += `\nUser's next message should be interpreted as YES/NO for this pending action.`;
+    }
+    
+    // Track current topic to prevent context leakage
+    const currentTopic = sessionData?.current_topic;
+    if (!currentTopic || isNewEmailRequest(finalMessage, currentTopic)) {
+      currentContextMsg += `\n\nThis is a NEW topic. Do NOT carry over context from previous unrelated requests.`;
+    }
+    
+    // CRITICAL: Only include last 4 messages to prevent contamination
+    const relevantHistory = finalHistory.slice(-4);
 
     let messages: any[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'system', content: currentContextMsg }, // Add explicit current context
-      ...relevantHistory,
-      { role: 'user', content: message } // Current user message
+      { role: 'user', content: currentContextMsg + '\n\n' + finalMessage }
     ];
+    
+    // Add recent history if available
+    if (relevantHistory.length > 0) {
+      messages = [
+        { role: 'system', content: systemPrompt },
+        ...relevantHistory,
+        { role: 'user', content: currentContextMsg + '\n\n' + finalMessage }
+      ];
+    }
+    
+// Helper function to detect new email requests
+function isNewEmailRequest(message: string, currentTopic: string | null): boolean {
+  const isEmail = message.toLowerCase().includes('email');
+  const hasNoActiveEmail = !currentTopic || !currentTopic.includes('email');
+  return isEmail && hasNoActiveEmail;
+}
 
     let aiMessage: any;
 
@@ -1122,7 +1199,14 @@ If the user's current question is about a different topic, respond ONLY to the n
                   traceId 
                 }
               });
-              result = contactResult.data?.message || 'Contact not found';
+              
+              // Store contact info for use in subsequent tools (e.g., email drafting)
+              if (contactResult.data?.contacts && contactResult.data.contacts.length > 0) {
+                const contact = contactResult.data.contacts[0];
+                result = `Found contact: ${contact.name}${contact.email ? ` (${contact.email})` : ''}`;
+              } else {
+                result = contactResult.data?.message || 'No contact found';
+              }
               break;
 
             case 'search_drive':
@@ -1295,7 +1379,13 @@ If the user's current question is about a different topic, respond ONLY to the n
       }
 
       const finalData = await finalResponse.json();
-      const finalMessage = finalData.choices[0].message.content;
+      let finalMessage = finalData.choices[0].message.content;
+      
+      // Ensure we never return empty message
+      if (!finalMessage || finalMessage.trim() === '') {
+        const toolNames = aiMessage.tool_calls.map((tc: any) => tc.function.name).join(', ');
+        finalMessage = `Got it! I've completed: ${toolNames}`;
+      }
 
       return new Response(JSON.stringify({ 
         message: finalMessage,
@@ -1306,8 +1396,15 @@ If the user's current question is about a different topic, respond ONLY to the n
 
     } else {
       // No tools needed - just conversational response
+      let responseMessage = aiMessage.content;
+      
+      // Ensure we never return empty message
+      if (!responseMessage || responseMessage.trim() === '') {
+        responseMessage = "I'm ready to help! What would you like me to do?";
+      }
+      
       return new Response(JSON.stringify({ 
-        message: aiMessage.content,
+        message: responseMessage,
         toolsUsed: []
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
