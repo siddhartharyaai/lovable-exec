@@ -306,13 +306,18 @@ serve(async (req) => {
               console.log(`[${traceId}] Existing session:`, existingSession ? 'found' : 'not found', selectError ? `error: ${selectError.message}` : '');
 
               if (existingSession) {
-                // Update existing session
+                // Update existing session WITH last_doc JSON object
                 const { error: updateError } = await supabase
                   .from('session_state')
                   .update({
                     last_uploaded_doc_id: docData?.id,
                     last_uploaded_doc_name: filename,
                     last_upload_ts: new Date().toISOString(),
+                    last_doc: {
+                      id: docData?.id,
+                      title: filename,
+                      uploaded_at: new Date().toISOString()
+                    },
                     updated_at: new Date().toISOString()
                   })
                   .eq('user_id', userId);
@@ -323,7 +328,7 @@ serve(async (req) => {
                   console.log(`[${traceId}] ✅ Session state UPDATED: doc_id=${docData?.id}, name=${filename}`);
                 }
               } else {
-                // Insert new session
+                // Insert new session WITH last_doc JSON object
                 const { error: insertError } = await supabase
                   .from('session_state')
                   .insert({
@@ -331,6 +336,11 @@ serve(async (req) => {
                     last_uploaded_doc_id: docData?.id,
                     last_uploaded_doc_name: filename,
                     last_upload_ts: new Date().toISOString(),
+                    last_doc: {
+                      id: docData?.id,
+                      title: filename,
+                      uploaded_at: new Date().toISOString()
+                    },
                     updated_at: new Date().toISOString()
                   });
 
@@ -557,15 +567,18 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 
-      } else if (classification.intent_type === 'confirmation_no' && sessionState?.confirmation_pending) {
-        // User cancelled a pending action
-        console.log(`[${traceId}] User cancelled pending action`);
-        replyText = "Okay, cancelled.";
+      } else if (classification.intent_type === 'confirmation_no' || 
+                 translatedBody.toLowerCase().match(/^(cancel|forget|forget all|reset|start over|nevermind|never mind)$/)) {
+        // User cancelled a pending action or wants to reset
+        console.log(`[${traceId}] User cancelled or reset conversation`);
+        replyText = "Okay, cancelled. What would you like me to help with?";
         
-        // Clear confirmation from session state
+        // Clear ALL session state to prevent stuck conversations
         await supabase.from('session_state').upsert({
           user_id: userId,
           confirmation_pending: null,
+          pending_slots: null,
+          current_topic: null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 

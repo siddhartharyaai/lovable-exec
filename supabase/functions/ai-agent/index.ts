@@ -785,6 +785,26 @@ serve(async (req) => {
 - DO NOT call lookup_contact or other setup tools again. Use the collected data and fill the remaining slots.`;
     }
     
+    // Check for follow-up questions about contact search results
+    const contactsSearchResults = sessionData?.contacts_search_results;
+    const msgLowerForContacts = finalMessage.toLowerCase();
+    const isContactFollowup = contactsSearchResults && 
+      (msgLowerForContacts.includes('other') || 
+       msgLowerForContacts.includes('more') || 
+       msgLowerForContacts.includes('which') ||
+       msgLowerForContacts.match(/^\d+$/)); // User replied with a number
+    
+    if (isContactFollowup) {
+      console.log(`[${traceId}] 📇 Contact follow-up detected with ${contactsSearchResults.length} stored results`);
+      currentContextMsg += `\n\nCONTACT FOLLOW-UP MODE:
+- Previously searched contacts found ${contactsSearchResults.length} matches
+- Stored contacts: ${JSON.stringify(contactsSearchResults.slice(0, 10))} ${contactsSearchResults.length > 10 ? '...' : ''}
+- User's message "${finalMessage}" is asking about these results (e.g., "which are the other matches", "show me more", or selecting by number)
+- If they're asking for more matches, show more from the stored list (up to 10 total)
+- If they selected one by number/name, use that contact's first email for the email draft
+- DO NOT call lookup_contact again - use the stored results`;
+    }
+    
     // Add document context if available
     if (lastDoc) {
       currentContextMsg += `\nIMPORTANT: User has a document loaded: "${lastDoc.title}" (uploaded ${lastDoc.uploaded_at})`;
@@ -1272,10 +1292,16 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                 }
               });
               
-              // Store contact info for use in subsequent tools (e.g., email drafting)
+              // Store ALL contact results in session_state for follow-up questions
               if (contactResult.data?.contacts && contactResult.data.contacts.length > 0) {
+                await supabase.from('session_state').upsert({
+                  user_id: userId,
+                  contacts_search_results: contactResult.data.contacts,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+                
                 const contact = contactResult.data.contacts[0];
-                result = `Found contact: ${contact.name}${contact.email ? ` (${contact.email})` : ''}`;
+                result = contactResult.data.message || `Found contact: ${contact.name}${contact.emails?.[0] ? ` (${contact.emails[0]})` : ''}`;
               } else {
                 result = contactResult.data?.message || 'No contact found';
               }
@@ -1461,22 +1487,14 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
         const hasEmailDraft = toolNames.includes('create_email_draft');
         
         if (hasContactLookup && !hasEmailDraft) {
-          // This is a problem - contact lookup without follow-up
-          // Try to extract contact info from tool results
+          // Contact lookup without follow-up - this is incorrect flow
+          // Extract the actual message from tool results
           const contactToolResult = toolResults.find(tr => tr.name === 'lookup_contact');
-          if (contactToolResult) {
-            try {
-              const contactData = JSON.parse(contactToolResult.content);
-              if (contactData.found && contactData.email) {
-                finalMessage = `I found ${contactData.name} (${contactData.email}). What should the subject line be for this email?`;
-              } else {
-                finalMessage = `I couldn't find a contact for that name. Could you provide their email address?`;
-              }
-            } catch {
-              finalMessage = `I've looked up the contact. What should the subject line be for this email?`;
-            }
+          if (contactToolResult && contactToolResult.content) {
+            // The content should be the message from handle-contacts
+            finalMessage = contactToolResult.content;
           } else {
-            finalMessage = `Got it! I've completed: ${toolNames}`;
+            finalMessage = `I've looked up the contact. What additional information do you need?`;
           }
         } else {
           finalMessage = `Got it! I've completed: ${toolNames}`;
