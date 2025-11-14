@@ -487,31 +487,27 @@ serve(async (req) => {
     const istTime = new Date(now.getTime() + istOffset);
     const currentDateTime = istTime.toISOString();
     const currentDate = istTime.toISOString().split('T')[0];
-    
     console.log(`[${traceId}] Current IST date/time: ${currentDateTime} (${currentDate})`);
 
-    // Phase 1: Route intent (decide ASK/ACT/ANSWER)
-    console.log(`[${traceId}] Routing intent...`);
-    const routingResult = await supabase.functions.invoke('route-intent', {
+    // Phase 1: Lightweight intent classification
+    console.log(`[${traceId}] Classifying intent...`);
+    const classificationResult = await supabase.functions.invoke('route-intent', {
       body: { 
-        message: translatedBody,
-        userId: userId,
-        conversationHistory: conversationHistory,
+        userMessage: translatedBody,
+        recentMessages: conversationHistory,
         sessionState: sessionState,
-        currentDateTime: currentDateTime,
-        currentDate: currentDate,
+        lastDoc: sessionState?.last_doc,
         traceId: traceId
       }
     });
 
     let replyText = '';
 
-    // Handle routing decision
-    if (routingResult.error || !routingResult.data) {
-      console.error(`[${traceId}] Routing error:`, routingResult.error);
-      // Fallback to direct AI agent
-      console.log(`[${traceId}] Falling back to AI agent...`);
-      console.log(`[${traceId}] Calling ai-agent (ANSWER mode)...`);
+    // Handle classification result
+    if (classificationResult.error || !classificationResult.data) {
+      console.error(`[${traceId}] Classification error:`, classificationResult.error);
+      // Fallback to direct AI agent (orchestrator)
+      console.log(`[${traceId}] Falling back to AI agent orchestrator...`);
       const agentResult = await supabase.functions.invoke('ai-agent', {
         body: { 
           message: translatedBody,
@@ -524,149 +520,75 @@ serve(async (req) => {
       console.log(`[${traceId}] ✅ AI agent response received`);
       replyText = agentResult.data?.message || "I'm having trouble processing that right now. Could you try rephrasing?";
     } else {
-      const routing = routingResult.data;
-      console.log(`[${traceId}] Routing decision: ${routing.decision}`, routing);
+      const classification = classificationResult.data;
+      console.log(`[${traceId}] Classification: ${classification.intent_type} (confidence: ${classification.confidence})`);
 
-      if (routing.decision === 'ASK') {
-        // Phase 2: Need clarification
-        replyText = routing.clarify_question;
-        if (routing.clarify_options && routing.clarify_options.length > 0) {
-          replyText += `\n\nOptions: ${routing.clarify_options.join(', ')}`;
-        }
+      // Handle different classifications
+      if (classification.intent_type === 'confirmation_yes' && sessionState?.confirmation_pending) {
+        // User confirmed a pending action
+        console.log(`[${traceId}] User confirmed pending action:`, sessionState.confirmation_pending);
+        
+        // Send typing indicator for action execution
+        await supabase.functions.invoke('send-typing-indicator', {
+          body: { userId, traceId }
+        });
 
-        // Phase 4: Check if confirmation needed
-        if (routing.requires_confirmation) {
-          await supabase.from('session_state').upsert({
-            user_id: userId,
-            confirmation_pending: routing.primary_intent,
-            updated_at: new Date().toISOString()
-          });
-          replyText += '\n\nReply YES to confirm or NO to cancel.';
-        }
-
-      } else if (routing.decision === 'ACT') {
-        // Check for red-flag actions requiring confirmation
-        const RED_FLAG_ACTIONS = ['delete_calendar_event', 'delete_task', 'mark_all_emails_read'];
-        const needsConfirmation = routing.primary_intent && 
-          RED_FLAG_ACTIONS.includes(routing.primary_intent.intent) &&
-          !sessionState?.confirmation_pending;
-
-        if (needsConfirmation) {
-          // Phase 4: Store pending action and ask for confirmation
-          await supabase.from('session_state').upsert({
-            user_id: userId,
-            confirmation_pending: {
-              action: routing.primary_intent.intent,
-              params: routing.primary_intent.slots,
-              asked_at: new Date().toISOString()
-            },
-            updated_at: new Date().toISOString()
-          });
-
-          // Generate confirmation message
-          const action = routing.primary_intent.intent;
-          if (action === 'delete_calendar_event') {
-            const person = routing.primary_intent.slots.person;
-            const date = routing.primary_intent.slots.date;
-            replyText = `Delete your meeting${person ? ` with ${person}` : ''}${date ? ` on ${date}` : ''}?\n\nReply YES to confirm or NO to cancel.`;
-          } else if (action === 'delete_task') {
-            replyText = `Delete the task "${routing.primary_intent.slots.task_identifier}"?\n\nReply YES to confirm or NO to cancel.`;
-          } else {
-            replyText = `Confirm this action?\n\nReply YES to proceed or NO to cancel.`;
+        // Execute the confirmed action via ai-agent with forcedIntent
+        const agentResult = await supabase.functions.invoke('ai-agent', {
+          body: { 
+            message: translatedBody,
+            userId: userId,
+            conversationHistory: conversationHistory,
+            forcedIntent: sessionState.confirmation_pending,
+            traceId: traceId
           }
+        });
 
-        } else if (sessionState?.confirmation_pending) {
-          console.log(`[${traceId}] User responding to pending confirmation: ${translatedBody}`);
-          // User is responding to confirmation - case-insensitive and natural language
-          const userResponse = translatedBody.toLowerCase().trim();
-          
-          // Check for confirmation keywords (case-insensitive, fuzzy matching)
-          const confirmKeywords = ['yes', 'y', 'yeah', 'yup', 'sure', 'ok', 'okay', 'confirm', 'go ahead', 'proceed', 'do it', 'go', 'affirmative'];
-          const denyKeywords = ['no', 'n', 'nope', 'nah', 'cancel', 'stop', 'dont', "don't", 'negative'];
-          
-          // Also check if message contains the action confirmation (e.g., "mark read", "delete")
-          const actionConfirmations: Record<string, string[]> = {
-            'gmail_mark_read': ['mark read', 'mark as read', 'mark them read', 'read all'],
-            'delete_calendar_event': ['delete', 'remove', 'cancel'],
-            'delete_task': ['delete', 'remove']
-          };
-          
-          const pendingAction = sessionState.confirmation_pending?.intent;
-          const actionPhrases = actionConfirmations[pendingAction] || [];
-          const containsActionPhrase = actionPhrases.some(phrase => userResponse.includes(phrase));
-          
-          const isConfirmed = confirmKeywords.some(keyword => userResponse.includes(keyword)) || containsActionPhrase;
-          const isDenied = denyKeywords.some(keyword => userResponse.includes(keyword));
+        replyText = agentResult.data?.message || "Done!";
 
-          if (isConfirmed) {
-            // Execute the pending action
-            console.log(`[${traceId}] Executing confirmed action...`);
-            
-            // Phase 6: Check if we need typing indicator (estimated latency)
-            const estimatedLatency = 3000; // Assume 3s for most actions
-            if (estimatedLatency > 2500) {
-              await supabase.functions.invoke('send-typing-indicator', {
-                body: { userId, traceId }
-              });
-            }
+        // Clear confirmation from session state
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          confirmation_pending: null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
 
-            const agentResult = await supabase.functions.invoke('ai-agent', {
-              body: { 
-                message: translatedBody,
-                userId: userId,
-                conversationHistory: conversationHistory,
-                forcedIntent: sessionState.confirmation_pending,
-                traceId: traceId
-              }
-            });
+      } else if (classification.intent_type === 'confirmation_no' && sessionState?.confirmation_pending) {
+        // User cancelled a pending action
+        console.log(`[${traceId}] User cancelled pending action`);
+        replyText = "Okay, cancelled.";
+        
+        // Clear confirmation from session state
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          confirmation_pending: null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
 
-            replyText = agentResult.data?.message || "Done!";
+      } else if (classification.intent_type === 'doc_action' && sessionState?.last_doc) {
+        // User wants to act on the last uploaded document
+        console.log(`[${traceId}] Document action detected for: ${sessionState.last_doc.title}`);
+        
+        // Send typing indicator
+        await supabase.functions.invoke('send-typing-indicator', {
+          body: { userId, traceId }
+        });
 
-            // Clear confirmation
-            await supabase.from('session_state').delete().eq('user_id', userId);
-
-          } else if (isDenied) {
-            replyText = "Okay, cancelled.";
-            await supabase.from('session_state').delete().eq('user_id', userId);
-          } else {
-            replyText = "Please reply YES to confirm or NO to cancel.";
+        // Call ai-agent with document context
+        const agentResult = await supabase.functions.invoke('ai-agent', {
+          body: { 
+            message: translatedBody,
+            userId: userId,
+            conversationHistory: conversationHistory,
+            traceId: traceId
           }
+        });
 
-        } else {
-          // Execute action directly
-          console.log(`[${traceId}] Executing action...`);
+        replyText = agentResult.data?.message || "I've processed your document request.";
 
-          // Phase 6: Estimate latency and send typing indicator if needed
-          const toolsEstimate: Record<string, number> = {
-            web_search: 5000,
-            email_search: 3000,
-            calendar_read: 2000,
-            default: 2000
-          };
-          const estimatedLatency = toolsEstimate[routing.primary_intent?.intent] || toolsEstimate.default;
-          
-          if (estimatedLatency > 2500) {
-            await supabase.functions.invoke('send-typing-indicator', {
-              body: { userId, traceId }
-            });
-          }
-
-          const agentResult = await supabase.functions.invoke('ai-agent', {
-            body: { 
-              message: translatedBody,
-              userId: userId,
-              conversationHistory: conversationHistory,
-              routedIntent: routing.primary_intent,
-              traceId: traceId
-            }
-          });
-
-          replyText = agentResult.data?.message || "Done!";
-        }
-
-      } else if (routing.decision === 'ANSWER') {
-        // Simple conversational response
-        console.log(`[${traceId}] Conversational response...`);
+      } else if (classification.intent_type === 'greeting_smalltalk') {
+        // Simple greeting - quick response
+        console.log(`[${traceId}] Greeting/smalltalk detected`);
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
             message: translatedBody,
@@ -677,7 +599,29 @@ serve(async (req) => {
           }
         });
 
-        replyText = agentResult.data?.message || "I'm here to help!";
+        replyText = agentResult.data?.message || "Hi! How can I help you today?";
+
+      } else {
+        // Handoff to orchestrator for all other cases
+        console.log(`[${traceId}] Handing off to AI agent orchestrator...`);
+        
+        // Send typing indicator for complex queries
+        if (classification.intent_type === 'handoff_to_orchestrator' && classification.confidence > 0.7) {
+          await supabase.functions.invoke('send-typing-indicator', {
+            body: { userId, traceId }
+          });
+        }
+
+        const agentResult = await supabase.functions.invoke('ai-agent', {
+          body: { 
+            message: translatedBody,
+            userId: userId,
+            conversationHistory: conversationHistory,
+            traceId: traceId
+          }
+        });
+
+        replyText = agentResult.data?.message || "I'm here to help! What would you like me to do?";
       }
     }
 
@@ -722,8 +666,8 @@ serve(async (req) => {
         userId: userId,
         userMessage: messageBody,
         aiResponse: replyText,
-        toolsUsed: routingResult.data?.primary_intent ? [routingResult.data.primary_intent.intent] : [],
-        routingDecision: routingResult.data?.decision,
+        toolsUsed: [],
+        routingDecision: classificationResult.data?.intent_type || 'unknown',
         traceId: traceId
       }
     }).catch((err: any) => {
@@ -742,8 +686,8 @@ serve(async (req) => {
       user_id: userId,
       type: 'webhook',
       payload: { 
-        routingDecision: routingResult.data?.decision,
-        intent: routingResult.data?.primary_intent?.intent,
+        routingDecision: classificationResult.data?.intent_type || 'unknown',
+        intent: classificationResult.data?.intent_type,
         languageDetected: languageInfo.language,
         traceId 
       },

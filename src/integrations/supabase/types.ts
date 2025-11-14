@@ -436,12 +436,17 @@ export type Database = {
           clarify_sent_at: string | null
           confirmation_pending: Json | null
           context: Json | null
+          current_topic: string | null
+          drive_search_results: Json | null
+          drive_search_timestamp: string | null
           journey_state: Json | null
           journey_step: number | null
+          last_doc: Json | null
           last_upload_ts: string | null
           last_uploaded_doc_id: string | null
           last_uploaded_doc_name: string | null
           pending_intent: Json | null
+          pending_slots: Json | null
           recent_actions: Json | null
           updated_at: string | null
           user_id: string
@@ -451,12 +456,17 @@ export type Database = {
           clarify_sent_at?: string | null
           confirmation_pending?: Json | null
           context?: Json | null
+          current_topic?: string | null
+          drive_search_results?: Json | null
+          drive_search_timestamp?: string | null
           journey_state?: Json | null
           journey_step?: number | null
+          last_doc?: Json | null
           last_upload_ts?: string | null
           last_uploaded_doc_id?: string | null
           last_uploaded_doc_name?: string | null
           pending_intent?: Json | null
+          pending_slots?: Json | null
           recent_actions?: Json | null
           updated_at?: string | null
           user_id: string
@@ -466,12 +476,17 @@ export type Database = {
           clarify_sent_at?: string | null
           confirmation_pending?: Json | null
           context?: Json | null
+          current_topic?: string | null
+          drive_search_results?: Json | null
+          drive_search_timestamp?: string | null
           journey_state?: Json | null
           journey_step?: number | null
+          last_doc?: Json | null
           last_upload_ts?: string | null
           last_uploaded_doc_id?: string | null
           last_uploaded_doc_name?: string | null
           pending_intent?: Json | null
+          pending_slots?: Json | null
           recent_actions?: Json | null
           updated_at?: string | null
           user_id?: string
@@ -518,6 +533,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "user_documents_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_memories: {
+        Row: {
+          category: string
+          content: string
+          created_at: string | null
+          id: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          category: string
+          content: string
+          created_at?: string | null
+          id?: string
+          source: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string | null
+          id?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_memories_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
