@@ -582,9 +582,41 @@ SESSION STATE RULES (CRITICAL):
      → Ask them to resend or name the file for Drive search
 
 CONTACT RESOLUTION (CRITICAL - PEOPLE FIRST PATTERN):
-- BEFORE sending email → call contacts_agent to resolve recipient
-- BEFORE scheduling meeting with attendees → call contacts_agent
-- Example flow: "Email Rohan" → contacts_agent(query="Rohan") → get email → gmail_agent(draft)
+- BEFORE sending email → ALWAYS call lookup_contact first to resolve recipient
+- BEFORE scheduling meeting with attendees → ALWAYS call lookup_contact first
+- Example flow for "Email Rohan": 
+  Step 1: Call lookup_contact(name="Rohan")
+  Step 2: If contact found with email, call create_email_draft with that email
+  Step 3: If no contact or ambiguous, ask user for email address
+- NEVER ask user for email before checking contacts
+- If lookup_contact returns an email, use it immediately for the next step (draft/send)
+
+EMAIL WORKFLOW (2-STEP REQUIRED):
+- For "Email [name] about [topic]" requests:
+  Step 1: Call lookup_contact to resolve the name
+  Step 2: After contact is found:
+    a) If you have subject & body from original message → call create_email_draft immediately
+    b) If missing subject or body → ask for the missing info (ONE question only)
+  Step 3: After draft is created → show draft and ask for confirmation
+- CRITICAL: After lookup_contact succeeds, you MUST either call create_email_draft or ask ONE clarifying question
+- NEVER just say "Got it! I've completed: lookup_contact" - always follow through with the email draft
+- Store collected info in pending_slots so follow-up messages can fill gaps without re-running lookup_contact
+
+SLOT-FILLING (FOR EMAIL/CALENDAR):
+- When collecting email subject/body or calendar details:
+  1. Set current_topic (e.g., "email_rohan", "meeting_nikhil")
+  2. Set pending_slots with intent and collected data
+  3. On next user message, check if pending_slots exists
+  4. If yes, treat message as filling a slot (e.g., "Deck sent" = subject line)
+  5. DO NOT re-run lookup_contact if you already have the email in pending_slots.collected
+- Example: 
+  User: "Email Rohan and ask if he got the deck"
+  You: Call lookup_contact → found rohan@bwships.com
+  You: Set pending_slots = {intent: "compose_email", collected: {to: "rohan@bwships.com", body: "..."}, required_slots: ["subject"]}
+  You: Reply "What should the subject line be?"
+  User: "Deck sent"
+  You: Use pending_slots.collected.to and new subject to call create_email_draft
+  You: Clear pending_slots after draft is created
 
 NATURAL LANGUAGE & UX:
 - Users speak messily. Infer intent while staying safe.
@@ -645,23 +677,24 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Hard rule: If last_doc exists and classified as doc_action, force document handling
+    // HARD RULE: If last_doc exists and classified as doc_action, force document handling
     const lastDoc = finalSessionState?.last_doc;
+    const msgLower = finalMessage.toLowerCase();
+    const docPhrases = [
+      'summarize', 'summarise', 'summary',
+      'what does this say', "what's this say", 'what is this',
+      'give me the summary', 'give me a summary', "what's the summary",
+      'extract task', 'extract action', 'get tasks from this',
+      'clean this', 'clean it up',
+      'tell me about this', 'tell me about it', "what's in this", "what's in it"
+    ];
     const isDocAction = classifiedIntent === 'doc_action' || 
-                       (lastDoc && (
-                         finalMessage.toLowerCase().includes('summarize') ||
-                         finalMessage.toLowerCase().includes('summary') ||
-                         finalMessage.toLowerCase().includes('what does this say') ||
-                         finalMessage.toLowerCase().includes('extract task') ||
-                         finalMessage.toLowerCase().includes('clean this') ||
-                         finalMessage.toLowerCase().includes('tell me about this') ||
-                         finalMessage.toLowerCase().includes("what's in")
-                       ));
+                       (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase)));
     
     if (isDocAction && lastDoc) {
-      console.log(`[${traceId}] 📄 Hard rule triggered: Document action on last_doc (${lastDoc.title})`);
+      console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}`);
       
-      // Call document_qna directly and return
+      // Call document_qna directly and return - NO OTHER TOOLS
       const { data: docResult, error: docError } = await supabase.functions.invoke('handle-document-qna', {
         body: {
           intent: {
@@ -674,12 +707,14 @@ serve(async (req) => {
       });
       
       if (docError) {
+        console.error(`[${traceId}] Document QnA error:`, docError);
         const reply = `I tried to summarize "${lastDoc.title}" but encountered an error. Please try uploading the document again.`;
         return new Response(JSON.stringify({ reply }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } else {
         const reply = docResult.answer || `Here's the summary of "${lastDoc.title}":\n\n${docResult.summary || 'Summary not available.'}`;
+        console.log(`[${traceId}] Document action completed successfully`);
         return new Response(JSON.stringify({ reply }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -700,6 +735,18 @@ serve(async (req) => {
       sessionData = data || {};
     }
 
+    // Check if we're in the middle of collecting slots for an email/task
+    const pendingSlots = sessionData?.pending_slots;
+    const currentTopic = sessionData?.current_topic;
+    const isSlotFilling = pendingSlots && 
+                         currentTopic && 
+                         currentTopic.startsWith('email_') &&
+                         pendingSlots.intent === 'compose_email';
+    
+    if (isSlotFilling) {
+      console.log(`[${traceId}] 📝 Slot-filling mode active for topic: ${currentTopic}. Treating message as slot value.`);
+    }
+    
     // Build conversation context
     const now = nowISO ? new Date(nowISO) : new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
@@ -709,8 +756,34 @@ serve(async (req) => {
     let currentContextMsg = `CURRENT CONTEXT:
 - Time: ${istTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
 - User's request: "${finalMessage}"
-- Session state: ${JSON.stringify(sessionData || {})}
-`;
+- confirmation_pending: ${sessionData.confirmation_pending ? JSON.stringify(sessionData.confirmation_pending) : 'none'}
+- current_topic: ${currentTopic || 'none'}
+- pending_slots: ${pendingSlots ? JSON.stringify(pendingSlots) : 'none'}`;
+    
+    // Include last_doc info if present
+    if (sessionData.last_doc) {
+      currentContextMsg += `\n- last_doc: User recently uploaded "${sessionData.last_doc.title}"`;
+    }
+    
+    // Include drive search results if recent
+    if (sessionData.drive_search_results && sessionData.drive_search_timestamp) {
+      const searchTime = new Date(sessionData.drive_search_timestamp);
+      const timeDiff = now.getTime() - searchTime.getTime();
+      if (timeDiff < 5 * 60 * 1000) { // Within 5 minutes
+        currentContextMsg += `\n- drive_search_results: ${sessionData.drive_search_results.length} files found recently`;
+      }
+    }
+    
+    // Add slot-filling guidance if active
+    if (isSlotFilling) {
+      currentContextMsg += `\n\nSLOT-FILLING MODE ACTIVE:
+- Topic: ${currentTopic}
+- Collecting slots for: ${pendingSlots.intent}
+- Already collected: ${JSON.stringify(pendingSlots.collected || {})}
+- Still needed: ${JSON.stringify(pendingSlots.required_slots?.filter((s: string) => !pendingSlots.collected?.[s]) || [])}
+- User's message "${finalMessage}" should be interpreted as filling one of the missing slots.
+- DO NOT call lookup_contact or other setup tools again. Use the collected data and fill the remaining slots.`;
+    }
     
     // Add document context if available
     if (lastDoc) {
@@ -725,7 +798,6 @@ serve(async (req) => {
     }
     
     // Track current topic to prevent context leakage
-    const currentTopic = sessionData?.current_topic;
     if (!currentTopic || isNewEmailRequest(finalMessage, currentTopic)) {
       currentContextMsg += `\n\nThis is a NEW topic. Do NOT carry over context from previous unrelated requests.`;
     }
@@ -1382,9 +1454,33 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
       let finalMessage = finalData.choices[0].message.content;
       
       // Ensure we never return empty message
+      // For email/contact flows, synthesize a proper response instead of generic message
       if (!finalMessage || finalMessage.trim() === '') {
         const toolNames = aiMessage.tool_calls.map((tc: any) => tc.function.name).join(', ');
-        finalMessage = `Got it! I've completed: ${toolNames}`;
+        const hasContactLookup = toolNames.includes('lookup_contact');
+        const hasEmailDraft = toolNames.includes('create_email_draft');
+        
+        if (hasContactLookup && !hasEmailDraft) {
+          // This is a problem - contact lookup without follow-up
+          // Try to extract contact info from tool results
+          const contactToolResult = toolResults.find(tr => tr.name === 'lookup_contact');
+          if (contactToolResult) {
+            try {
+              const contactData = JSON.parse(contactToolResult.content);
+              if (contactData.found && contactData.email) {
+                finalMessage = `I found ${contactData.name} (${contactData.email}). What should the subject line be for this email?`;
+              } else {
+                finalMessage = `I couldn't find a contact for that name. Could you provide their email address?`;
+              }
+            } catch {
+              finalMessage = `I've looked up the contact. What should the subject line be for this email?`;
+            }
+          } else {
+            finalMessage = `Got it! I've completed: ${toolNames}`;
+          }
+        } else {
+          finalMessage = `Got it! I've completed: ${toolNames}`;
+        }
       }
 
       return new Response(JSON.stringify({ 

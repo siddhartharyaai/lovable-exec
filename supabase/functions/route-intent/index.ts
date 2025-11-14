@@ -46,18 +46,18 @@ POSSIBLE INTENT TYPES:
 - "greeting_smalltalk": hi / hello / how are you / thanks / thank you / good morning
 - "handoff_to_orchestrator": anything non-trivial (DEFAULT for most queries)
 
-CRITICAL RULE FOR doc_action:
-- If last_doc exists AND user says anything like:
-  * "summarize this/it/the document"
-  * "what does this say"
-  * "give me the summary"
-  * "extract tasks/action items from this"
-  * "clean this up"
-  * "tell me about this/it"
-  * "what's in this"
-- Then ALWAYS classify as "doc_action" with confidence >= 0.9
-- Doc actions OVERRIDE simple_reminder when last_doc is present
-- Even if previous messages mentioned reminders, doc phrases win when last_doc exists
+CRITICAL RULE FOR doc_action (HIGHEST PRIORITY):
+- If last_doc exists, these phrases MUST be classified as doc_action with confidence 0.95+:
+  * "summarize this" / "summarise this" / "summarize it" / "summarise it"
+  * "what does this say" / "what's this say" / "what is this"
+  * "give me the summary" / "give me a summary" / "what's the summary"
+  * "extract tasks" / "extract action items" / "get tasks from this"
+  * "clean this up" / "clean it up"
+  * "tell me about this" / "tell me about it" / "what's in this" / "what's in it"
+  * ANY variation of these phrases (case-insensitive)
+- Doc actions have ABSOLUTE PRIORITY over all other intents when last_doc exists
+- Even if history shows reminders/emails/calendar, doc phrases ALWAYS win when last_doc is present
+- Default confidence for doc_action when last_doc exists: 0.95
 
 FOR doc_action EXAMPLES (when last_doc exists):
 - "Summarize this" → doc_action (0.95)
