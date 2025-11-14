@@ -99,13 +99,12 @@ const INTENT_SCHEMAS: Record<string, any> = {
   search_drive: {
     critical: ["query"],
     optional: ["max_results"],
-    clarify_templates: {
-      query: { question: "What should I search for in your Google Drive?", options: [] }
-    }
+    description: "Search for files in Google Drive by name or content. Use when user mentions a file name but needs to find it first ('there is a doc called X', 'find file named Y')."
   },
   read_drive_document: {
     critical: ["file_id"],
     optional: ["file_name"],
+    description: "Read a specific Google Drive document after it has been found. ONLY use when: (1) User provides a Google Drive URL/link, OR (2) User just saw search results and is selecting from the list.",
     clarify_templates: {
       file_id: { question: "Which Drive file should I read?", options: [] }
     }
@@ -190,9 +189,13 @@ INTENT DETECTION:
 - web_search: "search for", "what is", "find information"
 - query_documents: "summarize this doc", "what's in this document", "tell me about this file", "summarize the document", "read this doc", "summarize this", "what does this say", "summarize it", "what's in it" (when user recently uploaded a document OR says "this")
 - scrape_website: ONLY when explicit URL with http/https is provided AND NO recent document upload AND user wants to scrape/extract from a website. If user says "this" and there's a recent document, use query_documents NOT scrape_website!
-- search_drive: "find in drive", "search my drive", "look for file", "what's in my drive"
-- read_drive_document: When user provides Google Drive URL, file ID, OR specifies a file name after a recent drive search (check session_state for drive_search_results within last 10 minutes)
+- search_drive: DEFAULT for Google Drive file requests. Use when user mentions a file name/keyword to search ("there is a doc called X", "find charterpro", "doc named Y in drive"). This searches Drive and shows results.
+- read_drive_document: EXCEPTION ONLY. Use ONLY when: (1) User provides explicit Google Drive URL/link (https://drive.google.com/...), OR (2) Drive search just happened (< 10 min) AND user is selecting from results list by saying exact file name.
 - reminder_create: "remind me", "set reminder"
+
+CRITICAL DRIVE SEARCH RULE:
+If user says "there is a doc called X" or "doc named Y" or "find Z in drive" → ALWAYS use "search_drive", NOT "read_drive_document"
+Only use "read_drive_document" if user provides a Google Drive URL or has just seen search results and is selecting one.
 
 CONVERSATION CONTEXT AWARENESS (CRITICAL):
 - Check conversation history for previously mentioned dates/times
