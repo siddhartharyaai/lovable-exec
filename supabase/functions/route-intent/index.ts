@@ -46,12 +46,25 @@ POSSIBLE INTENT TYPES:
 - "greeting_smalltalk": hi / hello / how are you / thanks / thank you / good morning
 - "handoff_to_orchestrator": anything non-trivial (DEFAULT for most queries)
 
-FOR doc_action EXAMPLES (ONLY if last_doc exists):
-- "Summarize this"
-- "Clean this up"
-- "Extract tasks from this"
-- "What does this contract say about liability?"
-- "What's in this document?"
+CRITICAL RULE FOR doc_action:
+- If last_doc exists AND user says anything like:
+  * "summarize this/it/the document"
+  * "what does this say"
+  * "give me the summary"
+  * "extract tasks/action items from this"
+  * "clean this up"
+  * "tell me about this/it"
+  * "what's in this"
+- Then ALWAYS classify as "doc_action" with confidence >= 0.9
+- Doc actions OVERRIDE simple_reminder when last_doc is present
+- Even if previous messages mentioned reminders, doc phrases win when last_doc exists
+
+FOR doc_action EXAMPLES (when last_doc exists):
+- "Summarize this" → doc_action (0.95)
+- "Clean this up" → doc_action (0.9)
+- "Extract tasks from this" → doc_action (0.95)
+- "What does this contract say about liability?" → doc_action (0.9)
+- "Give me the summary" → doc_action (0.9)
 
 FOR confirmation_yes/no (ONLY if confirmation_pending exists):
 - Detect explicit replies like: yes, yup, okay send, do it, go ahead, confirmed, sure
