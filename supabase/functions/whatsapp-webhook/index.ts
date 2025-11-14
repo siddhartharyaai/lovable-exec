@@ -598,11 +598,13 @@ serve(async (req) => {
         console.log(`[${traceId}] Greeting/smalltalk detected`);
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
-            message: translatedBody,
+            userMessage: translatedBody,
+            history: conversationHistory,
+            sessionState: sessionState,
             userId: userId,
-            conversationHistory: conversationHistory,
-            isConversational: true,
-            traceId: traceId
+            traceId: traceId,
+            nowISO: new Date().toISOString(),
+            classifiedIntent: 'greeting_smalltalk'
           }
         });
 
