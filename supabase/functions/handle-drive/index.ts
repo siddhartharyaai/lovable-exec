@@ -86,18 +86,41 @@ serve(async (req) => {
     }
 
     // Format results
-    let message = `Found ${files.length} file${files.length > 1 ? 's' : ''} for "${query}":\n\n`;
+    let message = `I found ${files.length} file${files.length > 1 ? 's' : ''} that might be related to "${query}" in your Google Drive:\n\n`;
     
     files.forEach((file: any, index: number) => {
-      const fileType = file.mimeType.split('/').pop() || 'file';
-      const modified = new Date(file.modifiedTime).toLocaleDateString('en-IN');
-      message += `${index + 1}. **${file.name}**\n`;
-      message += `   Type: ${fileType} | Modified: ${modified}\n`;
-      message += `   Link: ${file.webViewLink}\n\n`;
+      const fileType = file.mimeType.includes('google-apps.document') ? 'Google Doc' :
+                       file.mimeType.includes('google-apps.spreadsheet') ? 'Google Sheet' :
+                       file.mimeType.includes('google-apps.presentation') ? 'Google Slides' :
+                       file.mimeType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml') ? 'Word Document' :
+                       file.mimeType.includes('application/pdf') ? 'PDF' : 
+                       file.mimeType.split('/').pop() || 'file';
+      const modified = new Date(file.modifiedTime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      message += `• **${file.name}** (${fileType}, modified ${modified})\n`;
+    });
+
+    message += `\nWhich one would you like me to summarize? Or is there a specific one you're looking for?`;
+
+    // Store search results in session state for follow-up
+    const fileMap: Record<string, string> = {};
+    files.forEach((file: any) => {
+      fileMap[file.name.toLowerCase()] = file.id;
+    });
+
+    await supabase.from('session_state').upsert({
+      user_id: userId,
+      drive_search_results: fileMap,
+      drive_search_timestamp: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }, {
+      onConflict: 'user_id'
     });
 
     return new Response(
-      JSON.stringify({ message }),
+      JSON.stringify({ 
+        message,
+        files: files.map((f: any) => ({ id: f.id, name: f.name, mimeType: f.mimeType }))
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
