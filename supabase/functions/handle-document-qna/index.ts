@@ -20,7 +20,8 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const query = intent.query || 'summarize';
-    const documentName = intent.document_name || null;
+    const documentName = intent.documentName || intent.document_name || null;
+    const documentId = intent.documentId || null;
     const operation = intent.operation || 'summarize';
     const previousSummary = intent.previousSummary || null;
 
@@ -47,14 +48,18 @@ serve(async (req) => {
 
     // Determine which document to work with
     let targetDoc = null;
-    
-    // CRITICAL FIX: Check if query contains a document name or if documentName is provided
     const queryLower = query.toLowerCase();
-    const isSummarizeRequest = queryLower.includes('summarize') || queryLower.includes('summary') || 
-                                queryLower.includes('what') || queryLower.includes('tell me');
     
-    if (documentName) {
-      // Find document by exact name match
+    // If documentId provided (from last_doc), find by ID first
+    if (documentId) {
+      targetDoc = documents.find(d => d.id === documentId);
+      if (targetDoc) {
+        console.log(`[${traceId}] ✅ Document found by ID: ${targetDoc.filename}`);
+      }
+    }
+    
+    // Fallback to name-based search
+    if (!targetDoc && documentName) {
       targetDoc = documents.find(d => d.filename.toLowerCase() === documentName.toLowerCase());
     }
     
@@ -70,16 +75,14 @@ serve(async (req) => {
       }
     }
     
-    // CRITICAL FIX: If no exact match found BUT user is asking to summarize "this" or "the document"
-    // AND there's a recent upload (< 2 hours), use the most recent document
+    // Fallback: use most recent document if context suggests it
     if (!targetDoc) {
       const recentUpload = documents[0];
       const uploadTime = new Date(recentUpload.created_at);
       const now = new Date();
       const minutesSinceUpload = (now.getTime() - uploadTime.getTime()) / (1000 * 60);
       
-      // If recent upload exists AND user is asking to summarize
-      if (minutesSinceUpload < 120 && isSummarizeRequest) {
+      if (minutesSinceUpload < 120) {
         targetDoc = recentUpload;
         console.log(`[${traceId}] ✅ Auto-detected recent document: ${targetDoc.filename} (uploaded ${Math.round(minutesSinceUpload)} min ago)`);
       }

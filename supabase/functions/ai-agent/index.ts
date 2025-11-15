@@ -682,25 +682,39 @@ serve(async (req) => {
     const lastDocSummary = finalSessionState?.last_doc_summary || null;
     const msgLower = finalMessage.toLowerCase();
     
-    // Detect continuation phrases
-    const continuationPhrases = [
-      'continue', 'complete', 'finish', 'go on', 
-      'continue summary', 'complete summary', 'finish summary',
-      'more', 'keep going', 'continue that', 'finish that'
-    ];
-    const isContinuation = continuationPhrases.some(phrase => msgLower.includes(phrase));
-    
+    // Expanded doc phrase detection - covers all natural language doc queries
     const docPhrases = [
-      'summarize', 'summarise', 'summary',
-      'what does this say', "what's this say", 'what is this',
-      'give me the summary', 'give me a summary', "what's the summary",
-      'extract task', 'extract action', 'get tasks from this',
-      'clean this', 'clean it up',
-      'tell me about this', 'tell me about it', "what's in this", "what's in it"
+      // Summaries
+      'summarize', 'summarise', 'summary', 'give me a summary', 'give me the summary',
+      'key takeaways', 'key takeaway', 'key points', 'key point', 'main points', 'main point',
+      'high level summary', 'high level', 'overview', 'brief summary',
+      'bullet points', 'bullet point', 'bullets', 'bullet', 'in bullet points',
+      
+      // Title/naming
+      'title', 'better title', 'new title', 'rename', 'headline', 'suggest a title',
+      
+      // Extraction/Q&A
+      'extract', 'find', 'who is', 'what is', 'where is', 'when is', 'how many',
+      'action items', 'action item', 'tasks', 'task', 'to-do', 'todo', 'to-dos', 'todos',
+      'risks', 'risk', 'opportunities', 'opportunity',
+      
+      // General doc references
+      'what does this say', "what's this say", 'what is this', 'tell me about this', 
+      'tell me about it', "what's in this", "what's in it", "what's the", 'clean this', 
+      'clean it up', 'analyze this', 'analyze it'
     ];
+    
+    // Detect references to "this document" / "the file" / "it"
+    const docReferences = [
+      'this document', 'the document', 'this file', 'the file', 
+      'this pdf', 'the pdf', 'in this', 'in the', 'from this', 'from the',
+      'about this', 'about the', 'of this', 'of the'
+    ];
+    const hasDocReference = lastDoc && docReferences.some(ref => msgLower.includes(ref));
+    
     const isDocAction = classifiedIntent === 'doc_action' || 
                        (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase))) ||
-                       (lastDoc && isContinuation);
+                       hasDocReference;
     
     // BUG FIX 1: If doc action but NO last_doc, ask user to upload
     if (isDocAction && !lastDoc) {
@@ -712,18 +726,17 @@ serve(async (req) => {
     }
     
     if (isDocAction && lastDoc) {
-      console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}. Continuation: ${isContinuation}`);
+      console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}`);
       
-      // Determine operation type
-      const operation = isContinuation ? 'continue_summary' : 'summarize';
-      
-      // Call document_qna directly and return - NO OTHER TOOLS
+      // Pass the FULL user query to doc handler - let it figure out what to do
       const { data: docResult, error: docError } = await supabase.functions.invoke('handle-document-qna', {
         body: {
           intent: {
-            operation,
+            operation: 'doc_query',           // Generic operation - handler will detect mode
+            query: finalMessage,               // Full natural language query
+            documentId: lastDoc.id,
             documentName: lastDoc.title,
-            previousSummary: lastDocSummary // Pass previous summary for continuations
+            previousSummary: lastDocSummary    // Pass previous summary for continuations/refinements
           },
           userId,
           traceId
