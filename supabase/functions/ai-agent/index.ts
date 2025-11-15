@@ -254,7 +254,26 @@ const TOOLS = [
           },
           body: { 
             type: "string", 
-            description: "Email body content. Use proper formatting, be professional but match user's tone" 
+            description: `Email body content. CRITICAL BREVITY RULES:
+
+**If user says "just say", "just tell", "quick ping", "tell them", or provides very short message (<50 chars):**
+- Keep to 1-2 sentences MAXIMUM
+- NO greeting ("Hi", "Hello")
+- NO pleasantries ("hope you're well")
+- NO sign-off ("Best regards", "Thanks")
+- Just the core message
+
+Example:
+User: "Email Nikhil and just say: approved"
+Body: "Approved."
+
+User: "Tell Rohan: got it, thanks"
+Body: "Got it, thanks."
+
+**Otherwise (formal/professional context):**
+- Use full email format with greeting and closing
+- Professional tone
+- Well-structured paragraphs` 
           },
           reply_to_message_id: { 
             type: "string", 
