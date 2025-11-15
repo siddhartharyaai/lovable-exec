@@ -40,8 +40,17 @@ async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, tr
         const numPages = document.numPages;
         console.log(`[${traceId}] PDF has ${numPages} pages`);
         
+        // 🚨 LARGE DOC LIMIT: Max 150 pages to avoid CPU timeout
+        const PAGE_LIMIT = 150;
+        const pagesToProcess = Math.min(numPages, PAGE_LIMIT);
+        const isLargeDoc = numPages > PAGE_LIMIT;
+        
+        if (isLargeDoc) {
+          console.warn(`[${traceId}] ⚠️ Large PDF detected (${numPages} pages). Processing first ${PAGE_LIMIT} pages only.`);
+        }
+        
         const textParts: string[] = [];
-        for (let i = 1; i <= numPages; i++) {
+        for (let i = 1; i <= pagesToProcess; i++) {
           const page = await document.getPage(i);
           const textContent = await page.getTextContent();
           const pageText = textContent.items.map((item: any) => item.str).join(' ');
@@ -51,8 +60,12 @@ async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, tr
         const extractedText = textParts.join('\n\n');
         
         if (extractedText && extractedText.length > 100) {
-          console.log(`[${traceId}] ✅ PDF parse success: ${extractedText.length} chars, ${numPages} pages`);
-          return extractedText;
+          console.log(`[${traceId}] ✅ PDF parse success: ${extractedText.length} chars, ${pagesToProcess} pages`);
+          
+          // Return metadata about truncation for user message
+          return isLargeDoc 
+            ? `[DOC_TRUNCATED:${numPages}:${PAGE_LIMIT}]\n\n${extractedText}`
+            : extractedText;
         } else {
           console.warn(`[${traceId}] PDF parse returned insufficient text: ${extractedText.length} chars`);
         }
@@ -241,6 +254,8 @@ serve(async (req) => {
 
     // Handle document upload (PDF, DOC, DOCX)
     let documentContext = '';
+    let largeDocWarning = '';
+    
     if (mediaUrl && (messageType === 'application/pdf' || 
                       messageType === 'application/msword' || 
                       messageType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
@@ -256,144 +271,186 @@ serve(async (req) => {
 
         if (docResponse.ok) {
           const docBuffer = await docResponse.arrayBuffer();
-          const docText = await extractTextFromDocument(docBuffer, messageType, traceId);
+          const bufferSizeMB = (docBuffer.byteLength / (1024 * 1024)).toFixed(2);
+          console.log(`[${traceId}] Document size: ${bufferSizeMB} MB`);
           
-          if (docText) {
-            // Extract real filename from Content-Disposition or use file extension mapping
-            let filename = 'document';
-            const contentDisposition = docResponse.headers.get('Content-Disposition');
-            if (contentDisposition) {
-              const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-              if (filenameMatch && filenameMatch[1]) {
-                filename = filenameMatch[1].replace(/['"]/g, '');
+          // 🚨 SIZE LIMIT: Max 20 MB
+          if (docBuffer.byteLength > 20 * 1024 * 1024) {
+            console.error(`[${traceId}] ❌ Document too large: ${bufferSizeMB} MB (limit: 20 MB)`);
+            largeDocWarning = `⚠️ That file is too large (${bufferSizeMB} MB). I can handle documents up to 20 MB. Could you send a smaller file or a specific section?`;
+            documentContext = '';
+          } else {
+            const docText = await extractTextFromDocument(docBuffer, messageType, traceId);
+            
+            if (docText) {
+              // Check for truncation marker
+              const truncationMatch = docText.match(/^\[DOC_TRUNCATED:(\d+):(\d+)\]\n\n/);
+              let cleanDocText = docText;
+              
+              if (truncationMatch) {
+                const totalPages = truncationMatch[1];
+                const processedPages = truncationMatch[2];
+                cleanDocText = docText.replace(/^\[DOC_TRUNCATED:\d+:\d+\]\n\n/, '');
+                largeDocWarning = `📄 This document has ${totalPages} pages. I've processed the first ${processedPages} pages for now. What would you like to know? (summary, key points, specific section, etc.)`;
+                console.log(`[${traceId}] 🔔 Setting large doc warning for user`);
               }
-            }
-            
-            // Fallback: generate filename based on mime type
-            if (filename === 'document') {
-              const extensions: Record<string, string> = {
-                'application/pdf': 'pdf',
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-                'application/msword': 'doc',
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-                'application/vnd.ms-excel': 'xls',
-                'text/plain': 'txt'
-              };
-              const ext = extensions[messageType] || 'file';
-              filename = `document_${Date.now()}.${ext}`;
-            }
-            
-            console.log(`[${traceId}] Extracted filename: ${filename}`);
-            const { data: docData } = await supabase.from('user_documents').insert({
-              user_id: userId,
-              filename: filename,
-              mime_type: messageType,
-              content_text: docText
-            }).select().single();
-
-            console.log(`[${traceId}] Document saved: ${filename}`);
-            
-            // Store document context in session_state for follow-up queries
-            // CRITICAL FIX: Use service role key to bypass RLS and ensure data persists
-            try {
-              // First, try to get existing session
-              const { data: existingSession, error: selectError } = await supabase
-                .from('session_state')
-                .select('*')
-                .eq('user_id', userId)
-                .maybeSingle();
-
-              console.log(`[${traceId}] Existing session:`, existingSession ? 'found' : 'not found', selectError ? `error: ${selectError.message}` : '');
-
-              if (existingSession) {
-                // Update existing session WITH last_doc JSON object
-                const { error: updateError } = await supabase
-                  .from('session_state')
-                  .update({
-                    last_uploaded_doc_id: docData?.id,
-                    last_uploaded_doc_name: filename,
-                    last_upload_ts: new Date().toISOString(),
-                    last_doc: {
-                      id: docData?.id,
-                      title: filename,
-                      uploaded_at: new Date().toISOString()
-                    },
-                    last_doc_summary: null, // Clear previous summary
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('user_id', userId);
-
-                if (updateError) {
-                  console.error(`[${traceId}] ⚠️ Session state update failed:`, updateError);
-                } else {
-                  console.log(`[${traceId}] ✅ Session state UPDATED: doc_id=${docData?.id}, name=${filename}`);
+              
+              // Extract real filename from Content-Disposition or use file extension mapping
+              let filename = 'document';
+              const contentDisposition = docResponse.headers.get('Content-Disposition');
+              if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                  filename = filenameMatch[1].replace(/['"]/g, '');
                 }
-              } else {
-                // Insert new session WITH last_doc JSON object
-                const { error: insertError } = await supabase
-                  .from('session_state')
-                  .insert({
+              }
+              
+              // Fallback: generate filename based on mime type
+              if (filename === 'document') {
+                const extensions: Record<string, string> = {
+                  'application/pdf': 'pdf',
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+                  'application/msword': 'doc',
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+                  'application/vnd.ms-excel': 'xls',
+                  'text/plain': 'txt'
+                };
+                const ext = extensions[messageType] || 'file';
+                filename = `document_${Date.now()}.${ext}`;
+              }
+              
+              console.log(`[${traceId}] Extracted filename: ${filename}`);
+              
+              // 🚨 TEXT LIMIT: Truncate to 200K chars for DB safety
+              const TEXT_LIMIT = 200000;
+              const finalDocText = cleanDocText.length > TEXT_LIMIT 
+                ? cleanDocText.substring(0, TEXT_LIMIT) + '\n\n[Text truncated due to size]'
+                : cleanDocText;
+              
+              if (cleanDocText.length > TEXT_LIMIT) {
+                console.warn(`[${traceId}] ⚠️ Text truncated: ${cleanDocText.length} → ${TEXT_LIMIT} chars`);
+              }
+              
+              const { data: docData, error: docInsertError } = await supabase.from('user_documents').insert({
+                user_id: userId,
+                filename: filename,
+                mime_type: messageType,
+                content_text: finalDocText
+              }).select().single();
+              
+              if (docInsertError) {
+                console.error(`[${traceId}] ❌ DB insert error:`, docInsertError);
+                largeDocWarning = '⚠️ I saved your document but ran into an issue storing the full content. Try asking about a specific section.';
+              } else if (docData) {
+                console.log(`[${traceId}] Document saved: ${filename}`);
+                
+                // Store document context in session_state for follow-up queries
+                // CRITICAL FIX: Use service role key to bypass RLS and ensure data persists
+                try {
+                  // First, try to get existing session
+                  const { data: existingSession, error: selectError } = await supabase
+                    .from('session_state')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .maybeSingle();
+
+                  console.log(`[${traceId}] Existing session:`, existingSession ? 'found' : 'not found', selectError ? `error: ${selectError.message}` : '');
+
+                  if (existingSession) {
+                    // Update existing session WITH last_doc JSON object
+                    const { error: updateError } = await supabase
+                      .from('session_state')
+                      .update({
+                        last_uploaded_doc_id: docData?.id,
+                        last_uploaded_doc_name: filename,
+                        last_upload_ts: new Date().toISOString(),
+                        last_doc: {
+                          id: docData?.id,
+                          title: filename,
+                          uploaded_at: new Date().toISOString()
+                        },
+                        last_doc_summary: null, // Clear previous summary
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('user_id', userId);
+
+                    if (updateError) {
+                      console.error(`[${traceId}] ⚠️ Session state update failed:`, updateError);
+                    } else {
+                      console.log(`[${traceId}] ✅ Session state UPDATED: doc_id=${docData?.id}, name=${filename}`);
+                    }
+                  } else {
+                    // Insert new session WITH last_doc JSON object
+                    const { error: insertError } = await supabase
+                      .from('session_state')
+                      .insert({
+                        user_id: userId,
+                        last_uploaded_doc_id: docData?.id,
+                        last_uploaded_doc_name: filename,
+                        last_upload_ts: new Date().toISOString(),
+                        last_doc: {
+                          id: docData?.id,
+                          title: filename,
+                          uploaded_at: new Date().toISOString()
+                        },
+                        last_doc_summary: null, // Clear previous summary
+                        updated_at: new Date().toISOString()
+                      });
+
+                    if (insertError) {
+                      console.error(`[${traceId}] ⚠️ Session state insert failed:`, insertError);
+                    } else {
+                      console.log(`[${traceId}] ✅ Session state INSERTED: doc_id=${docData?.id}, name=${filename}`);
+                    }
+                  }
+                } catch (sessionError) {
+                  console.error(`[${traceId}] ⚠️ Session state operation failed:`, sessionError);
+                }
+                
+                // If user asked to summarize or analyze the document, continue processing
+                // Otherwise, send confirmation and STILL allow message processing to continue
+                const docKeywords = ['summarize', 'summary', 'what does', 'tell me about', 'read', 'analyze', 'extract'];
+                const hasDocRequest = body && docKeywords.some(kw => body.toLowerCase().includes(kw));
+                
+                if (!body || !hasDocRequest) {
+                  // No text message or no specific doc request - just confirm upload
+                  const baseConfirmation = `📄 Got it! I've saved your document "${filename}".`;
+                  const confirmReply = largeDocWarning 
+                    ? `${baseConfirmation}\n\n${largeDocWarning}`
+                    : `${baseConfirmation} What would you like to know about it?`;
+                  
+                  await supabase.functions.invoke('send-whatsapp', {
+                    body: { userId, message: confirmReply, traceId }
+                  });
+                  
+                  // Store confirmation in recent_actions
+                  await supabase.from('session_state').upsert({
                     user_id: userId,
-                    last_uploaded_doc_id: docData?.id,
-                    last_uploaded_doc_name: filename,
-                    last_upload_ts: new Date().toISOString(),
-                    last_doc: {
-                      id: docData?.id,
-                      title: filename,
-                      uploaded_at: new Date().toISOString()
-                    },
-                    last_doc_summary: null, // Clear previous summary
+                    recent_actions: [{
+                      action: 'document_uploaded',
+                      details: `Uploaded ${filename}`,
+                      timestamp: new Date().toISOString()
+                    }],
                     updated_at: new Date().toISOString()
                   });
-
-                if (insertError) {
-                  console.error(`[${traceId}] ⚠️ Session state insert failed:`, insertError);
-                } else {
-                  console.log(`[${traceId}] ✅ Session state INSERTED: doc_id=${docData?.id}, name=${filename}`);
+                  
+                  console.log(`[${traceId}] Document saved, confirmation sent, session updated`);
+                  return new Response(JSON.stringify({ success: true }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                  });
                 }
+                
+                // User wants to process the document - enrich message context
+                documentContext = `[SYSTEM: User just uploaded document "${filename}" (${messageType}). Document ID: ${docData?.id}. It has been saved and is ready for querying.]`;
+                messageBody = body ? `${documentContext}\n\nUser: ${body}` : documentContext;
+                console.log(`[${traceId}] Continuing with document context: ${messageBody.substring(0, 100)}...`);
               }
-            } catch (sessionError) {
-              console.error(`[${traceId}] ⚠️ Session state operation failed:`, sessionError);
             }
-            
-            // If user asked to summarize or analyze the document, continue processing
-            // Otherwise, send confirmation and STILL allow message processing to continue
-            const docKeywords = ['summarize', 'summary', 'what does', 'tell me about', 'read', 'analyze', 'extract'];
-            const hasDocRequest = body && docKeywords.some(kw => body.toLowerCase().includes(kw));
-            
-            if (!body || !hasDocRequest) {
-              // No text message or no specific doc request - just confirm upload
-              const confirmReply = `📄 Got it! I've saved your document "${filename}". What would you like to know about it?`;
-              await supabase.functions.invoke('send-whatsapp', {
-                body: { userId, message: confirmReply, traceId }
-              });
-              
-              // Store confirmation in recent_actions
-              await supabase.from('session_state').upsert({
-                user_id: userId,
-                recent_actions: [{
-                  action: 'document_uploaded',
-                  details: `Uploaded ${filename}`,
-                  timestamp: new Date().toISOString()
-                }],
-                updated_at: new Date().toISOString()
-              });
-              
-              console.log(`[${traceId}] Document saved, confirmation sent, session updated`);
-              return new Response(JSON.stringify({ success: true }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              });
-            }
-            
-            // User wants to process the document - enrich message context
-            documentContext = `[SYSTEM: User just uploaded document "${filename}" (${messageType}). Document ID: ${docData?.id}. It has been saved and is ready for querying.]`;
-            messageBody = body ? `${documentContext}\n\nUser: ${body}` : documentContext;
-            console.log(`[${traceId}] Continuing with document context: ${messageBody.substring(0, 100)}...`);
           }
         }
       } catch (docError) {
         console.error(`[${traceId}] Document processing error:`, docError);
-        const errorReply = "Sorry, I had trouble processing that document. Could you try uploading it again?";
+        const errorReply = largeDocWarning || "Sorry, I had trouble processing that document. Could you try uploading it again?";
         await supabase.functions.invoke('send-whatsapp', {
           body: { userId, message: errorReply, traceId }
         });
