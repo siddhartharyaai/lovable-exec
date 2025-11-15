@@ -39,6 +39,7 @@ YOUR JOB:
 - Just help decide: Is this YES/NO? Doc action? Simple pattern? Or handoff?
 
 POSSIBLE INTENT TYPES:
+- "email_action": ANY message containing email verbs (ABSOLUTE HIGHEST PRIORITY)
 - "confirmation_yes": yes / yup / okay send / do it / go ahead / confirmed / sure / absolutely / please do
 - "confirmation_no": no / don't / cancel / stop / never mind / nope / not now
 - "doc_action": user asking to act on last_doc ("summarize this", "clean this up", "extract tasks", "what does this say")
@@ -46,8 +47,24 @@ POSSIBLE INTENT TYPES:
 - "greeting_smalltalk": hi / hello / how are you / thanks / thank you / good morning
 - "handoff_to_orchestrator": anything non-trivial (DEFAULT for most queries)
 
-CRITICAL RULE FOR doc_action (HIGHEST PRIORITY):
-- If last_doc exists, these phrases MUST be classified as doc_action with confidence 0.95+:
+CRITICAL RULE #1 - EMAIL VERBS (ABSOLUTE HIGHEST PRIORITY - OVERRIDES EVERYTHING):
+- If the message contains ANY of these email verbs, classify as "email_action" with confidence 0.98:
+  * "email " / "mail " / "send an email" / "write an email" / "draft an email"
+  * "send a email" / "write a email" / "draft a email"
+  * "message him" / "message her" / "message them"
+  * "tell him" / "tell her" / "tell them" (in email context)
+  * "inform him" / "inform her" / "inform them"
+  * "ping him" / "ping her" / "ping them"
+  * "reply to" / "respond to" (email context)
+- EMAIL VERBS ALWAYS WIN, even if:
+  * last_doc exists
+  * message mentions "document" or "this" or "it"
+  * message could be interpreted as doc_action
+- Example: "Email Rohan and tell him the document is approved" → email_action (0.98), NOT doc_action
+- Example: "Write to Sarah about this contract" → email_action (0.98), NOT doc_action
+
+CRITICAL RULE #2 - DOC ACTION (SECOND PRIORITY, ONLY IF NO EMAIL VERBS):
+- ONLY if no email verbs present AND last_doc exists, these phrases are doc_action:
   * "summarize this" / "summarise this" / "summarize it" / "summarise it"
   * "what does this say" / "what's this say" / "what is this"
   * "give me the summary" / "give me a summary" / "what's the summary"
@@ -55,11 +72,17 @@ CRITICAL RULE FOR doc_action (HIGHEST PRIORITY):
   * "clean this up" / "clean it up"
   * "tell me about this" / "tell me about it" / "what's in this" / "what's in it"
   * ANY variation of these phrases (case-insensitive)
-- Doc actions have ABSOLUTE PRIORITY over all other intents when last_doc exists
-- Even if history shows reminders/emails/calendar, doc phrases ALWAYS win when last_doc is present
 - Default confidence for doc_action when last_doc exists: 0.95
+- BUT: If email verbs present, doc_action is NEVER chosen
 
-FOR doc_action EXAMPLES (when last_doc exists):
+EXAMPLES OF EMAIL ACTION (ALWAYS HIGHEST PRIORITY):
+- "Email Rohan and tell him the document is approved" → email_action (0.98) - NOT doc_action!
+- "Write to Sarah about this contract" → email_action (0.98) - NOT doc_action!
+- "Send an email to John" → email_action (0.98)
+- "Message her about the meeting" → email_action (0.98)
+- "Ping Mike and ask about status" → email_action (0.98)
+
+EXAMPLES OF DOC ACTION (ONLY WHEN NO EMAIL VERBS):
 - "Summarize this" → doc_action (0.95)
 - "Clean this up" → doc_action (0.9)
 - "Extract tasks from this" → doc_action (0.95)

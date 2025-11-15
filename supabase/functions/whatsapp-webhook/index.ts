@@ -491,7 +491,7 @@ serve(async (req) => {
       .eq('user_id', userId)
       .single();
 
-    const sessionState = sessionStateData || null;
+    let sessionState = sessionStateData || null;
 
     // Calculate current date/time in IST for context
     const now = new Date();
@@ -515,7 +515,8 @@ serve(async (req) => {
 
     let replyText = '';
     
-    // HARD OVERRIDE: Email intent verbs always win over doc detection
+    // Email verb override is now handled in route-intent as highest priority
+    // This is a safety net in case route-intent misses it
     const msgLower = translatedBody.toLowerCase();
     const emailVerbs = [
       'email ', 'mail ', 'send an email', 'write an email', 'draft an email',
@@ -528,10 +529,10 @@ serve(async (req) => {
     ];
     
     const hasEmailVerb = emailVerbs.some(verb => msgLower.includes(verb));
-    if (hasEmailVerb && classificationResult.data) {
-      console.log(`[${traceId}] 🔧 OVERRIDE: Email verb detected, forcing email_action`);
+    if (hasEmailVerb && classificationResult.data?.intent_type !== 'email_action') {
+      console.log(`[${traceId}] 🔧 SAFETY NET: Email verb detected but route-intent missed it, forcing email_action`);
       classificationResult.data.intent_type = 'email_action';
-      classificationResult.data.confidence = 0.95;
+      classificationResult.data.confidence = 0.98;
     }
 
     // Handle classification result
@@ -628,7 +629,7 @@ serve(async (req) => {
 
       } else if (classification.intent_type === 'email_action') {
         // User wants to send/draft an email
-        console.log(`[${traceId}] Email action detected`);
+        console.log(`[${traceId}] ✉️ Email action detected for: "${translatedBody.substring(0, 60)}..."`);
         
         // Send typing indicator
         await supabase.functions.invoke('send-typing-indicator', {
@@ -636,6 +637,7 @@ serve(async (req) => {
         });
 
         // Call ai-agent with email intent (bypass doc detection)
+        console.log(`[${traceId}] Invoking ai-agent with email_action intent`);
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
             userMessage: translatedBody,
@@ -648,11 +650,12 @@ serve(async (req) => {
           }
         });
         
+        console.log(`[${traceId}] ✅ Email flow complete, got response`);
         replyText = agentResult.data?.message || "I'll help you with that email.";
         
       } else if (classification.intent_type === 'doc_action' && sessionState?.last_doc) {
         // User wants to act on the last uploaded document
-        console.log(`[${traceId}] Document action detected for: ${sessionState.last_doc.title}`);
+        console.log(`[${traceId}] 📄 Doc action detected for: ${sessionState.last_doc.title}, query: "${translatedBody.substring(0, 60)}..."`);
         
         // Send typing indicator
         await supabase.functions.invoke('send-typing-indicator', {
@@ -660,6 +663,7 @@ serve(async (req) => {
         });
 
         // Call ai-agent with document context
+        console.log(`[${traceId}] Invoking ai-agent with doc_action intent`);
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
             userMessage: translatedBody,
@@ -672,6 +676,7 @@ serve(async (req) => {
           }
         });
 
+        console.log(`[${traceId}] ✅ Doc flow complete, got response`);
         replyText = agentResult.data?.message || "I've processed your document request.";
         
         // Store the updated summary if returned
@@ -685,8 +690,40 @@ serve(async (req) => {
         }
 
       } else if (classification.intent_type === 'greeting_smalltalk') {
-        // Simple greeting - quick response
+        // Simple greeting - check for stale pending state
         console.log(`[${traceId}] Greeting/smalltalk detected`);
+        
+        // Check if there's stale pending state (older than 5 minutes)
+        const hasStalePendingState = sessionState?.confirmation_pending || 
+                                     sessionState?.pending_slots || 
+                                     sessionState?.contacts_search_results;
+        
+        if (hasStalePendingState) {
+          const lastUpdate = sessionState?.updated_at ? new Date(sessionState.updated_at) : new Date(0);
+          const minutesSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60);
+          
+          if (minutesSinceUpdate > 5) {
+            console.log(`[${traceId}] Detected stale pending state (${minutesSinceUpdate.toFixed(1)} min old), clearing it`);
+            
+            // Clear stale state
+            await supabase.from('session_state').upsert({
+              user_id: userId,
+              confirmation_pending: null,
+              pending_slots: null,
+              contacts_search_results: null,
+              current_topic: null,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+            
+            // Refresh sessionState
+            const freshStateResult = await supabase.from('session_state')
+              .select('*')
+              .eq('user_id', userId)
+              .single();
+            sessionState = freshStateResult.data;
+          }
+        }
+        
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
             userMessage: translatedBody,
@@ -699,6 +736,7 @@ serve(async (req) => {
           }
         });
 
+        console.log(`[${traceId}] ✅ Greeting flow complete, got response`);
         replyText = agentResult.data?.message || "Hi! How can I help you today?";
         
         // Store the updated summary if returned
@@ -713,7 +751,7 @@ serve(async (req) => {
 
       } else {
         // Handoff to orchestrator for all other cases
-        console.log(`[${traceId}] Handing off to AI agent orchestrator...`);
+        console.log(`[${traceId}] 🔄 Handing off to AI agent orchestrator (intent: ${classification.intent_type})...`);
         
         // Send typing indicator for complex queries
         if (classification.intent_type === 'handoff_to_orchestrator' && classification.confidence > 0.7) {
@@ -734,6 +772,7 @@ serve(async (req) => {
           }
         });
 
+        console.log(`[${traceId}] ✅ Orchestrator flow complete, got response`);
         replyText = agentResult.data?.message || "I'm here to help! What would you like me to do?";
         
         // Store the updated summary if returned (applies to all agent calls)
@@ -772,14 +811,16 @@ serve(async (req) => {
       { user_id: userId, role: 'assistant', content: replyText }
     ]);
 
-    // Send WhatsApp reply
-    console.log(`[${traceId}] Sending reply...`);
+    // Send WhatsApp reply with traceId tracking
+    console.log(`[${traceId}] 📤 Sending reply for THIS message (length: ${replyText.length} chars)...`);
     const sendResult = await supabase.functions.invoke('send-whatsapp', {
       body: { userId, message: replyText, traceId }
     });
 
     if (sendResult.error) {
-      console.error(`[${traceId}] Failed to send reply:`, sendResult.error);
+      console.error(`[${traceId}] ❌ Failed to send reply:`, sendResult.error);
+    } else {
+      console.log(`[${traceId}] ✅ Reply sent successfully`);
     }
 
     // Trigger async self-reflection analysis (don't wait for it)
@@ -817,9 +858,10 @@ serve(async (req) => {
       trace_id: traceId,
     });
 
-    console.log(`[${traceId}] Webhook processing complete`);
+    console.log(`[${traceId}] ✅ Webhook processing complete for THIS message`);
+    console.log(`[${traceId}] Summary: ${classificationResult.data?.intent_type || 'unknown'} → "${replyText.substring(0, 80)}..."`);
     
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, traceId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
