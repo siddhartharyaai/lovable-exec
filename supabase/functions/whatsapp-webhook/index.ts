@@ -533,6 +533,16 @@ serve(async (req) => {
       
       console.log(`[${traceId}] ✅ AI agent response received`);
       replyText = agentResult.data?.message || "I'm having trouble processing that right now. Could you try rephrasing?";
+      
+      // Store the updated summary if returned
+      if (agentResult.data?.updatedSummary) {
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          last_doc_summary: agentResult.data.updatedSummary,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        console.log(`[${traceId}] Updated last_doc_summary in session_state`);
+      }
     } else {
       const classification = classificationResult.data;
       console.log(`[${traceId}] Classification: ${classification.intent_type} (confidence: ${classification.confidence})`);
@@ -561,6 +571,16 @@ serve(async (req) => {
         });
 
         replyText = agentResult.data?.message || "Done!";
+        
+        // Store the updated summary if returned
+        if (agentResult.data?.updatedSummary) {
+          await supabase.from('session_state').upsert({
+            user_id: userId,
+            last_doc_summary: agentResult.data.updatedSummary,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+          console.log(`[${traceId}] Updated last_doc_summary in session_state`);
+        }
 
         // Clear confirmation from session state
         await supabase.from('session_state').upsert({
@@ -637,6 +657,16 @@ serve(async (req) => {
         });
 
         replyText = agentResult.data?.message || "Hi! How can I help you today?";
+        
+        // Store the updated summary if returned
+        if (agentResult.data?.updatedSummary) {
+          await supabase.from('session_state').upsert({
+            user_id: userId,
+            last_doc_summary: agentResult.data.updatedSummary,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+          console.log(`[${traceId}] Updated last_doc_summary in session_state`);
+        }
 
       } else {
         // Handoff to orchestrator for all other cases
@@ -662,6 +692,16 @@ serve(async (req) => {
         });
 
         replyText = agentResult.data?.message || "I'm here to help! What would you like me to do?";
+        
+        // Store the updated summary if returned (applies to all agent calls)
+        if (agentResult.data?.updatedSummary) {
+          await supabase.from('session_state').upsert({
+            user_id: userId,
+            last_doc_summary: agentResult.data.updatedSummary,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+          console.log(`[${traceId}] Updated last_doc_summary in session_state`);
+        }
       }
     }
 
