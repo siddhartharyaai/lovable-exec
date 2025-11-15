@@ -691,6 +691,15 @@ serve(async (req) => {
     const isDocAction = classifiedIntent === 'doc_action' || 
                        (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase)));
     
+    // BUG FIX 1: If doc action but NO last_doc, ask user to upload
+    if (isDocAction && !lastDoc) {
+      console.log(`[${traceId}] 📄 Doc action requested but no last_doc exists`);
+      const message = "I don't see any recent document. Please upload the file (PDF, DOC, DOCX) or tell me the name of the document in your Drive.";
+      return new Response(JSON.stringify({ message }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     if (isDocAction && lastDoc) {
       console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}`);
       
@@ -708,14 +717,15 @@ serve(async (req) => {
       
       if (docError) {
         console.error(`[${traceId}] Document QnA error:`, docError);
-        const reply = `I tried to summarize "${lastDoc.title}" but encountered an error. Please try uploading the document again.`;
-        return new Response(JSON.stringify({ reply }), {
+        const message = `I tried to summarize "${lastDoc.title}" but encountered an error. Please try uploading the document again.`;
+        return new Response(JSON.stringify({ message }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } else {
-        const reply = docResult.answer || `Here's the summary of "${lastDoc.title}":\n\n${docResult.summary || 'Summary not available.'}`;
+        // BUG FIX 2: Return 'message' field to match what webhook expects
+        const message = docResult.answer || docResult.message || `Here's the summary of "${lastDoc.title}":\n\n${docResult.summary || 'Summary not available.'}`;
         console.log(`[${traceId}] Document action completed successfully`);
-        return new Response(JSON.stringify({ reply }), {
+        return new Response(JSON.stringify({ message }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
