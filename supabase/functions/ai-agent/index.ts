@@ -696,10 +696,23 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     
+    // HARD OVERRIDE: Email intent verbs always win over doc detection
+    const msgLower = finalMessage.toLowerCase();
+    const emailVerbs = [
+      'email ', 'mail ', 'send an email', 'write an email', 'draft an email',
+      'send a email', 'write a email', 'draft a email',
+      'message him', 'message her', 'message them',
+      'tell him', 'tell her', 'tell them',
+      'inform him', 'inform her', 'inform them',
+      'ping him', 'ping her', 'ping them',
+      'reply to', 'respond to'
+    ];
+    
+    const hasEmailVerb = emailVerbs.some(verb => msgLower.includes(verb));
+    
     // HARD RULE: If last_doc exists and classified as doc_action, force document handling
     const lastDoc = finalSessionState?.last_doc;
     const lastDocSummary = finalSessionState?.last_doc_summary || null;
-    const msgLower = finalMessage.toLowerCase();
     
     // Expanded doc phrase detection - covers all natural language doc queries
     const docPhrases = [
@@ -731,9 +744,16 @@ serve(async (req) => {
     ];
     const hasDocReference = lastDoc && docReferences.some(ref => msgLower.includes(ref));
     
-    const isDocAction = classifiedIntent === 'doc_action' || 
-                       (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase))) ||
-                       hasDocReference;
+    // Email verbs ALWAYS override doc detection
+    const isDocAction = !hasEmailVerb && (
+      classifiedIntent === 'doc_action' || 
+      (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase))) ||
+      hasDocReference
+    );
+    
+    if (hasEmailVerb) {
+      console.log(`[${traceId}] 🔧 OVERRIDE: Email verb detected, bypassing doc action`);
+    }
     
     // BUG FIX 1: If doc action but NO last_doc, ask user to upload
     if (isDocAction && !lastDoc) {

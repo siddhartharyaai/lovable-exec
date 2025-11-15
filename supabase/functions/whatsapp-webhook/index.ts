@@ -514,6 +514,25 @@ serve(async (req) => {
     });
 
     let replyText = '';
+    
+    // HARD OVERRIDE: Email intent verbs always win over doc detection
+    const msgLower = translatedBody.toLowerCase();
+    const emailVerbs = [
+      'email ', 'mail ', 'send an email', 'write an email', 'draft an email',
+      'send a email', 'write a email', 'draft a email',
+      'message him', 'message her', 'message them',
+      'tell him', 'tell her', 'tell them',
+      'inform him', 'inform her', 'inform them',
+      'ping him', 'ping her', 'ping them',
+      'reply to', 'respond to'
+    ];
+    
+    const hasEmailVerb = emailVerbs.some(verb => msgLower.includes(verb));
+    if (hasEmailVerb && classificationResult.data) {
+      console.log(`[${traceId}] 🔧 OVERRIDE: Email verb detected, forcing email_action`);
+      classificationResult.data.intent_type = 'email_action';
+      classificationResult.data.confidence = 0.95;
+    }
 
     // Handle classification result
     if (classificationResult.error || !classificationResult.data) {
@@ -607,6 +626,30 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 
+      } else if (classification.intent_type === 'email_action') {
+        // User wants to send/draft an email
+        console.log(`[${traceId}] Email action detected`);
+        
+        // Send typing indicator
+        await supabase.functions.invoke('send-typing-indicator', {
+          body: { userId, traceId }
+        });
+
+        // Call ai-agent with email intent (bypass doc detection)
+        const agentResult = await supabase.functions.invoke('ai-agent', {
+          body: { 
+            userMessage: translatedBody,
+            history: conversationHistory,
+            sessionState: sessionState,
+            userId: userId,
+            traceId: traceId,
+            nowISO: new Date().toISOString(),
+            classifiedIntent: 'email_action'
+          }
+        });
+        
+        replyText = agentResult.data?.message || "I'll help you with that email.";
+        
       } else if (classification.intent_type === 'doc_action' && sessionState?.last_doc) {
         // User wants to act on the last uploaded document
         console.log(`[${traceId}] Document action detected for: ${sessionState.last_doc.title}`);
