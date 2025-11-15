@@ -209,32 +209,43 @@ serve(async (req) => {
         if (events.length === 0) {
           message = '📅 No events found for the requested time period.';
         } else {
-          message = `📅 **Your Events:**\n\n`;
+          // Format date range for display
+          const startDate = new Date(startTime);
+          const endDate = new Date(endTime);
+          const sameDay = startDate.toDateString() === endDate.toDateString();
+          
+          const dateDisplay = sameDay 
+            ? startDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+            : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+          
+          message = `📅 **Your Events for ${dateDisplay}**\n\nYou have ${events.length} event${events.length > 1 ? 's' : ''}:\n\n`;
+          
           events.forEach((event: any, i: number) => {
             const start = new Date(event.start.dateTime || event.start.date);
-            console.log(`[${traceId}] Event ${i+1} start:`, event.start.dateTime || event.start.date);
             
-            const timeStr = event.start.dateTime 
-              ? start.toLocaleString('en-GB', { 
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: true,
-                  timeZone: intent.tz || 'Asia/Kolkata'
-                })
-              : start.toLocaleDateString('en-GB', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: '2-digit'
-                });
-            
-            message += `${i + 1}. **${event.summary}**\n   ${timeStr}\n`;
-            if (event.attendees?.length) {
-              message += `   👥 ${event.attendees.length} attendee(s)\n`;
+            // Format time as "9:00 AM" or "All day"
+            let timeStr = '';
+            if (event.start.dateTime) {
+              timeStr = start.toLocaleTimeString('en-US', { 
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+                timeZone: intent.tz || 'Asia/Kolkata'
+              });
+            } else {
+              timeStr = 'All day';
             }
-            message += '\n';
+            
+            message += `• **${event.summary}** at ${timeStr}`;
+            if (event.attendees?.length) {
+              const attendeeNames = event.attendees
+                .map((a: any) => a.displayName || a.email.split('@')[0])
+                .slice(0, 2) // Show first 2 attendees
+                .join(', ');
+              const moreCount = event.attendees.length > 2 ? ` +${event.attendees.length - 2} more` : '';
+              message += `\n  👥 with ${attendeeNames}${moreCount}`;
+            }
+            message += '\n\n';
           });
         }
         break;
