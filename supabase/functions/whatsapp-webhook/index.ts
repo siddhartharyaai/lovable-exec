@@ -568,7 +568,7 @@ serve(async (req) => {
         }, { onConflict: 'user_id' });
 
       } else if (classification.intent_type === 'confirmation_no' || 
-                 translatedBody.toLowerCase().match(/^(cancel|forget|forget all|reset|start over|nevermind|never mind)$/)) {
+                 translatedBody.toLowerCase().match(/\b(cancel|stop|forget|reset|clear|discard|abort|ignore|nevermind|never mind)\b/)) {
         // User cancelled a pending action or wants to reset
         console.log(`[${traceId}] User cancelled or reset conversation`);
         replyText = "Okay, cancelled. What would you like me to help with?";
@@ -579,6 +579,8 @@ serve(async (req) => {
           confirmation_pending: null,
           pending_slots: null,
           current_topic: null,
+          last_doc: null,
+          contacts_search_results: null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 
