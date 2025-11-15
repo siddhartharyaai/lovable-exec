@@ -783,7 +783,16 @@ serve(async (req) => {
       });
       
       if (docError) {
-        console.error(`[${traceId}] Document QnA error:`, docError);
+        console.error(`[${traceId}] 🔥 Document QnA error:`, docError);
+        console.error(`[${traceId}] Error details:`, JSON.stringify(docError, null, 2));
+        
+        // CRITICAL: Always return a user-facing message on tool failure
+        const errorMessage = docError.message || 'Document processing failed';
+        return new Response(JSON.stringify({ 
+          message: `I had trouble processing your document question. ${errorMessage}`
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
         const message = `I tried to summarize "${lastDoc.title}" but encountered an error. Please try uploading the document again.`;
         return new Response(JSON.stringify({ message }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

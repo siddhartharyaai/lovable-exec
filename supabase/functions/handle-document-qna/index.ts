@@ -11,8 +11,11 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let traceId = 'unknown'; // Default in case JSON parsing fails
   try {
-    const { intent, userId, traceId } = await req.json();
+    const parsed = await req.json();
+    traceId = parsed.traceId || 'unknown';
+    const { intent, userId } = parsed;
     console.log(`[${traceId}] Document Q&A request:`, intent);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -185,33 +188,66 @@ serve(async (req) => {
       userPrompt = `Previous summary already provided:\n${previousSummary}\n\nFull document:\n${contextForAI}\n\nContinue the summary from where the previous one ended. Do NOT repeat any content already covered. Only provide NEW information.`;
     }
     
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ],
-        max_tokens: 500
-      })
-    });
+    // Add timeout to AI API call to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55s timeout (edge functions have 60s limit)
+    
+    let aiResponse;
+    try {
+      aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: userPrompt
+            }
+          ],
+          max_tokens: 1500  // Increased for multi-part queries
+        }),
+        signal: controller.signal
+      });
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        console.error(`[${traceId}] ⏱️ AI API timeout after 55s`);
+        throw new Error('AI processing took too long. Please try a simpler question or break it into parts.');
+      }
+      console.error(`[${traceId}] 🔥 AI API fetch error:`, fetchError);
+      throw new Error('AI service temporarily unavailable. Please try again.');
+    }
+    
+    clearTimeout(timeoutId);
 
+    // Handle non-2xx responses
     if (!aiResponse.ok) {
-      throw new Error('AI summarization failed');
+      const errorText = await aiResponse.text().catch(() => 'No error details');
+      console.error(`[${traceId}] 🔥 AI API error ${aiResponse.status}:`, errorText);
+      
+      if (aiResponse.status === 429) {
+        throw new Error('AI service is busy right now. Please try again in a moment.');
+      }
+      if (aiResponse.status === 413) {
+        throw new Error('This document is too large to process in one go. Try asking about a specific section or page range.');
+      }
+      throw new Error(`AI processing failed (status ${aiResponse.status}). Please try again.`);
     }
 
-    const aiData = await aiResponse.json();
+    const aiData = await aiResponse.json().catch(() => null);
+    if (!aiData || !aiData.choices || !aiData.choices[0]) {
+      console.error(`[${traceId}] 🔥 Invalid AI response structure:`, aiData);
+      throw new Error('AI returned invalid response. Please try rephrasing your question.');
+    }
+    
     const answer = aiData.choices[0]?.message?.content || 'Unable to generate summary';
     
     // Build the full accumulated summary
@@ -233,11 +269,27 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Document Q&A error:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Failed to query documents';
+    console.error(`[${traceId}] 🔥 Document Q&A FATAL ERROR:`, errorMsg);
+    console.error(`[${traceId}] Stack:`, error instanceof Error ? error.stack : 'No stack');
+    
+    // GUARANTEE: Always return a user-facing message, never silence
+    let userMessage = "Sorry, I hit an issue processing your document question. ";
+    
+    if (errorMsg.includes('too long') || errorMsg.includes('timeout')) {
+      userMessage += "The query took too long - try asking something simpler or break it into parts.";
+    } else if (errorMsg.includes('busy') || errorMsg.includes('429')) {
+      userMessage += "The AI is busy right now. Please try again in a moment.";
+    } else if (errorMsg.includes('too large') || errorMsg.includes('413')) {
+      userMessage += "The document is too large. Try asking about a specific section.";
+    } else {
+      userMessage += "Please try rephrasing your question or try again.";
+    }
+    
     return new Response(
       JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Failed to query documents',
-        message: "Sorry, I couldn't search your documents right now. Please try again."
+        message: userMessage,
+        error: errorMsg
       }),
       { 
         status: 500,

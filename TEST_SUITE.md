@@ -52,6 +52,31 @@
 |---|------------|---------------|-----------------|--------|-------------|
 | 20 | "who is the director mentioned?" | qa | Direct answer from doc | ✅ PASS | 2024-11-15 |
 
+### Multi-Part Queries (CRITICAL)
+
+| # | User Query | Expected Behavior | Status | Last Tested |
+|---|------------|-------------------|--------|-------------|
+| 21 | "Give a summary in 3 bullet points. Give me a better title and who is this book meant for" | Should answer all 3 parts in one response OR politely say "That's a lot - I'll answer X first, then you can ask Y/Z". NEVER go silent. | ⏳ TO TEST | - |
+| 22 | "Summarize this and extract action items" | Should provide both summary and action items OR politely split the request | ⏳ TO TEST | - |
+| 23 | "Key takeaways, risks, and opportunities" | Should address all 3 or explain splitting needed | ⏳ TO TEST | - |
+
+### Large Document Handling
+
+| # | User Query | Document Size | Expected Behavior | Status | Last Tested |
+|---|------------|---------------|-------------------|--------|-------------|
+| 24 | "Summarize this" | 150+ pages (truncated) | Should work, may take 10-20s, but MUST respond | ⏳ TO TEST | - |
+| 25 | Multi-part query (see #21) | 150+ pages (truncated) | Should respond even if takes time, NEVER silent | ⏳ TO TEST | - |
+
+### Error Handling (CRITICAL)
+
+| # | Scenario | Expected User Message | Status | Last Tested |
+|---|----------|----------------------|--------|-------------|
+| 26 | AI API timeout (>55s) | "AI processing took too long. Please try a simpler question or break it into parts." | ⏳ TO TEST | - |
+| 27 | AI API rate limit (429) | "AI service is busy right now. Please try again in a moment." | ⏳ TO TEST | - |
+| 28 | AI API payload too large (413) | "This document is too large to process in one go. Try asking about a specific section or page range." | ⏳ TO TEST | - |
+| 29 | Generic AI API failure | "AI processing failed. Please try again." | ⏳ TO TEST | - |
+| 30 | ai-agent returns null/empty | "I hit an unexpected issue. Please try again or rephrase your request." | ⏳ TO TEST | - |
+
 ---
 
 ## Email Domain (15 tests)
