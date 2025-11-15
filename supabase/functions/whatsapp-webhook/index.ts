@@ -318,6 +318,7 @@ serve(async (req) => {
                       title: filename,
                       uploaded_at: new Date().toISOString()
                     },
+                    last_doc_summary: null, // Clear previous summary
                     updated_at: new Date().toISOString()
                   })
                   .eq('user_id', userId);
@@ -341,6 +342,7 @@ serve(async (req) => {
                       title: filename,
                       uploaded_at: new Date().toISOString()
                     },
+                    last_doc_summary: null, // Clear previous summary
                     updated_at: new Date().toISOString()
                   });
 
@@ -580,6 +582,7 @@ serve(async (req) => {
           pending_slots: null,
           current_topic: null,
           last_doc: null,
+          last_doc_summary: null,
           contacts_search_results: null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
@@ -607,6 +610,16 @@ serve(async (req) => {
         });
 
         replyText = agentResult.data?.message || "I've processed your document request.";
+        
+        // Store the updated summary if returned
+        if (agentResult.data?.updatedSummary) {
+          await supabase.from('session_state').upsert({
+            user_id: userId,
+            last_doc_summary: agentResult.data.updatedSummary,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+          console.log(`[${traceId}] Updated last_doc_summary in session_state`);
+        }
 
       } else if (classification.intent_type === 'greeting_smalltalk') {
         // Simple greeting - quick response

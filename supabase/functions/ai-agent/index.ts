@@ -679,7 +679,17 @@ serve(async (req) => {
     
     // HARD RULE: If last_doc exists and classified as doc_action, force document handling
     const lastDoc = finalSessionState?.last_doc;
+    const lastDocSummary = finalSessionState?.last_doc_summary || null;
     const msgLower = finalMessage.toLowerCase();
+    
+    // Detect continuation phrases
+    const continuationPhrases = [
+      'continue', 'complete', 'finish', 'go on', 
+      'continue summary', 'complete summary', 'finish summary',
+      'more', 'keep going', 'continue that', 'finish that'
+    ];
+    const isContinuation = continuationPhrases.some(phrase => msgLower.includes(phrase));
+    
     const docPhrases = [
       'summarize', 'summarise', 'summary',
       'what does this say', "what's this say", 'what is this',
@@ -689,7 +699,8 @@ serve(async (req) => {
       'tell me about this', 'tell me about it', "what's in this", "what's in it"
     ];
     const isDocAction = classifiedIntent === 'doc_action' || 
-                       (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase)));
+                       (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase))) ||
+                       (lastDoc && isContinuation);
     
     // BUG FIX 1: If doc action but NO last_doc, ask user to upload
     if (isDocAction && !lastDoc) {
@@ -701,14 +712,18 @@ serve(async (req) => {
     }
     
     if (isDocAction && lastDoc) {
-      console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}`);
+      console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}. Continuation: ${isContinuation}`);
+      
+      // Determine operation type
+      const operation = isContinuation ? 'continue_summary' : 'summarize';
       
       // Call document_qna directly and return - NO OTHER TOOLS
       const { data: docResult, error: docError } = await supabase.functions.invoke('handle-document-qna', {
         body: {
           intent: {
-            operation: 'summarize',
-            documentName: lastDoc.title
+            operation,
+            documentName: lastDoc.title,
+            previousSummary: lastDocSummary // Pass previous summary for continuations
           },
           userId,
           traceId
@@ -724,8 +739,12 @@ serve(async (req) => {
       } else {
         // BUG FIX 2: Return 'message' field to match what webhook expects
         const message = docResult.answer || docResult.message || `Here's the summary of "${lastDoc.title}":\n\n${docResult.summary || 'Summary not available.'}`;
+        const updatedSummary = docResult.fullSummary || null; // Get the full accumulated summary
         console.log(`[${traceId}] Document action completed successfully`);
-        return new Response(JSON.stringify({ message }), {
+        return new Response(JSON.stringify({ 
+          message,
+          updatedSummary // Pass this back to webhook to update session_state
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

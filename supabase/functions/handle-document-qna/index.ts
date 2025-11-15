@@ -21,6 +21,8 @@ serve(async (req) => {
 
     const query = intent.query || 'summarize';
     const documentName = intent.document_name || null;
+    const operation = intent.operation || 'summarize';
+    const previousSummary = intent.previousSummary || null;
 
     // Fetch user's documents
     const { data: documents, error: docsError } = await supabase
@@ -171,6 +173,15 @@ serve(async (req) => {
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
+    // Build system prompt based on operation type
+    let systemPrompt = `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document excerpts. If the answer isn't in the excerpts, say so. Always cite which document the information came from. Keep responses concise (max 200 words).`;
+    let userPrompt = `Documents:\n${contextForAI}\n\nQuestion: ${query}`;
+    
+    if (operation === 'continue_summary') {
+      systemPrompt = `You are Maria, a helpful document assistant. The user wants you to CONTINUE a summary that was already started. DO NOT repeat any content from the previous summary. Only add NEW information that comes AFTER what was already covered.`;
+      userPrompt = `Previous summary already provided:\n${previousSummary}\n\nFull document:\n${contextForAI}\n\nContinue the summary from where the previous one ended. Do NOT repeat any content already covered. Only provide NEW information.`;
+    }
+    
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -182,11 +193,11 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document excerpts. If the answer isn't in the excerpts, say so. Always cite which document the information came from. Keep responses concise (max 200 words).`
+            content: systemPrompt
           },
           {
             role: 'user',
-            content: `Documents:\n${contextForAI}\n\nQuestion: ${query}`
+            content: userPrompt
           }
         ],
         max_tokens: 500
@@ -198,12 +209,23 @@ serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    const answer = aiData.choices[0]?.message?.content || 'Unable to generate answer';
+    const answer = aiData.choices[0]?.message?.content || 'Unable to generate summary';
+    
+    // Build the full accumulated summary
+    let fullSummary = answer;
+    if (operation === 'continue_summary' && previousSummary) {
+      fullSummary = `${previousSummary}\n\n${answer}`;
+    }
+    
+    const message = `📄 **${targetDoc.filename}**\n\n${answer}`;
 
-    const message = `${answer}\n\n**Source:** 📄 ${targetDoc.filename}`;
+    console.log(`[${traceId}] ✅ Document summary generated successfully (operation: ${operation})`);
 
     return new Response(
-      JSON.stringify({ message }),
+      JSON.stringify({ 
+        message,
+        fullSummary // Return the full accumulated summary for storage
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
