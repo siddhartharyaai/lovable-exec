@@ -647,7 +647,14 @@ serve(async (req) => {
           }
         });
 
-        replyText = agentResult.data?.message || "Done!";
+        // SAFETY NET: Check if ai-agent returned a valid response
+        if (!agentResult || !agentResult.data || !agentResult.data.message) {
+          console.error(`[${traceId}] 🚨 CRITICAL: ai-agent returned empty/null response for general action`);
+          console.error(`[${traceId}] agentResult:`, JSON.stringify(agentResult, null, 2));
+          replyText = "I hit an unexpected issue. Please try again or rephrase your request.";
+        } else {
+          replyText = agentResult.data.message;
+        }
         
         // Store the updated summary if returned
         if (agentResult.data?.updatedSummary) {
@@ -708,7 +715,15 @@ serve(async (req) => {
         });
         
         console.log(`[${traceId}] ✅ Email flow complete, got response`);
-        replyText = agentResult.data?.message || "I'll help you with that email.";
+        
+        // SAFETY NET: Check if ai-agent returned a valid response
+        if (!agentResult || !agentResult.data || !agentResult.data.message) {
+          console.error(`[${traceId}] 🚨 CRITICAL: ai-agent returned empty/null response for email_action`);
+          console.error(`[${traceId}] agentResult:`, JSON.stringify(agentResult, null, 2));
+          replyText = "I hit an unexpected issue with the email flow. Please try again or rephrase your request.";
+        } else {
+          replyText = agentResult.data.message;
+        }
         
       } else if (classification.intent_type === 'doc_action' && sessionState?.last_doc) {
         // User wants to act on the last uploaded document
@@ -734,7 +749,15 @@ serve(async (req) => {
         });
 
         console.log(`[${traceId}] ✅ Doc flow complete, got response`);
-        replyText = agentResult.data?.message || "I've processed your document request.";
+        
+        // SAFETY NET: Check if ai-agent returned a valid response
+        if (!agentResult || !agentResult.data || !agentResult.data.message) {
+          console.error(`[${traceId}] 🚨 CRITICAL: ai-agent returned empty/null response for doc_action`);
+          console.error(`[${traceId}] agentResult:`, JSON.stringify(agentResult, null, 2));
+          replyText = "I hit an unexpected issue processing your document question. Please try rephrasing it or ask something simpler.";
+        } else {
+          replyText = agentResult.data.message;
+        }
         
         // Store the updated summary if returned
         if (agentResult.data?.updatedSummary) {
