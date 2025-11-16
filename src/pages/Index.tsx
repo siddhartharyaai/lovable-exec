@@ -1,240 +1,303 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Bot, Calendar, Mail, CheckSquare, MessageSquare, Zap, Shield, Clock } from "lucide-react";
+import { Bot, Calendar, Mail, CheckSquare, MessageSquare, Zap, Shield, Clock, FileText, Users, ArrowRight, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { FadeInView } from "@/components/animations/FadeInView";
 
 const Index = () => {
   const navigate = useNavigate();
 
+  const features = [
+    {
+      icon: Calendar,
+      title: "Smart Calendar",
+      description: "\"Block 30 mins tomorrow for team sync\" - and it's done. View, create, and manage events naturally.",
+      color: "primary",
+    },
+    {
+      icon: Mail,
+      title: "Email Intelligence",
+      description: "Summarize unread emails, draft replies, or send messages—all without opening your inbox.",
+      color: "accent",
+    },
+    {
+      icon: CheckSquare,
+      title: "Task Management",
+      description: "Create to-dos, check off tasks, and get reminded when deadlines approach.",
+      color: "warning",
+    },
+    {
+      icon: MessageSquare,
+      title: "Daily Briefings",
+      description: "Wake up to a summary of your day: calendar, emails, tasks, and weather.",
+      color: "success",
+    },
+    {
+      icon: FileText,
+      title: "Voice & Text",
+      description: "Send a voice note or type. Man Friday understands both, works in your language.",
+      color: "destructive",
+    },
+    {
+      icon: Shield,
+      title: "Privacy First",
+      description: "Your data is encrypted and secure. You control what's stored and can export or delete anytime.",
+      color: "muted-foreground",
+    },
+  ];
+
+  const howItWorksSteps = [
+    {
+      number: "1",
+      title: "Connect Accounts",
+      description: "Link your Google Workspace and WhatsApp in minutes.",
+      icon: Users,
+    },
+    {
+      number: "2",
+      title: "Chat Naturally",
+      description: "Ask Man Friday anything via text or voice on WhatsApp.",
+      icon: MessageSquare,
+    },
+    {
+      number: "3",
+      title: "Get Things Done",
+      description: "Man Friday handles the rest—scheduling, emails, reminders, and more.",
+      icon: Sparkles,
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-accent/10">
-      {/* Hero Section */}
-      <section className="container mx-auto px-4 py-20 text-center">
-        <div className="max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-4 py-2 mb-6 bg-primary/10 border border-primary/20 rounded-full">
-            <Bot className="w-4 h-4 text-primary" />
+      <section className="container mx-auto px-4 py-20 lg:py-28">
+        <div className="max-w-5xl mx-auto text-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="inline-flex items-center gap-2 px-4 py-2 mb-6 bg-primary/10 border border-primary/20 rounded-full backdrop-blur-sm"
+          >
+            <Bot className="w-4 h-4 text-primary animate-float" />
             <span className="text-sm font-medium text-primary">Powered by Lovable AI</span>
-          </div>
+          </motion.div>
           
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6"
+          >
             Man Friday, your
-            <span className="block text-primary">AI Executive Assistant</span>
-            <span className="block text-muted-foreground text-xl md:text-2xl">
+            <span className="block text-gradient mt-2">AI Executive Assistant</span>
+            <span className="block text-muted-foreground text-2xl md:text-3xl font-normal mt-4">
               right inside WhatsApp.
             </span>
-          </h1>
+          </motion.h1>
           
-          <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="mt-6 text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed"
+          >
             Manage your calendar, email, tasks, and documents in a single WhatsApp chat.
             Man Friday gives you proactive briefings, smart reminders, and fast summaries
             so you can focus on the work that actually matters.
-          </p>
+          </motion.p>
           
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center mt-10"
+          >
             <Button 
               size="lg" 
-              className="text-lg px-8 py-6"
+              className="text-lg px-10 py-7 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
               onClick={() => navigate('/dashboard')}
             >
               <MessageSquare className="w-5 h-5 mr-2" />
-              Get Started
+              Get Started Free
+              <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
             <Button 
               size="lg" 
               variant="outline" 
-              className="text-lg px-8 py-6"
+              className="text-lg px-10 py-7 backdrop-blur-sm hover:bg-background/50 hover:scale-105 transition-all duration-300"
               onClick={() => navigate('/settings')}
             >
               <Shield className="w-5 h-5 mr-2" />
               View Setup Guide
             </Button>
-          </div>
+          </motion.div>
 
-          {/* Trust Badges */}
-          <div className="flex flex-wrap gap-6 justify-center items-center text-sm text-muted-foreground">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+            className="flex flex-wrap gap-8 justify-center items-center mt-16 text-sm text-muted-foreground"
+          >
             <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-success" />
+              <Shield className="w-5 h-5 text-success" />
               <span>End-to-end Encrypted</span>
             </div>
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-warning" />
+              <Zap className="w-5 h-5 text-warning" />
               <span>Instant Responses</span>
             </div>
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-accent" />
-              <span>Proactive Assistance</span>
+              <Clock className="w-5 h-5 text-accent" />
+              <span>24/7 Proactive Assistance</span>
             </div>
+          </motion.div>
+        </div>
+      </section>
+
+      <section className="container mx-auto px-4 py-20 lg:py-28">
+        <FadeInView>
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-4">
+              Everything You Need, <span className="text-gradient">In One Chat</span>
+            </h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              Seamlessly integrated with Google Workspace. Voice or text. Simple and powerful.
+            </p>
+          </div>
+        </FadeInView>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-7xl mx-auto">
+          {features.map((feature, index) => {
+            const Icon = feature.icon;
+            return (
+              <motion.div
+                key={feature.title}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+                whileHover={{ scale: 1.05, y: -5 }}
+              >
+                <Card className="p-8 border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-2xl hover:border-primary/30 transition-all duration-300 h-full">
+                  <div className="p-4 bg-primary/10 rounded-xl w-fit mb-6">
+                    <Icon className={`w-8 h-8 text-${feature.color}`} />
+                  </div>
+                  <h3 className="text-2xl font-semibold mb-3">{feature.title}</h3>
+                  <p className="text-muted-foreground leading-relaxed">
+                    {feature.description}
+                  </p>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="container mx-auto px-4 py-20 lg:py-28">
+        <FadeInView>
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-4">
+              Get Started in <span className="text-gradient">3 Simple Steps</span>
+            </h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              From setup to productivity in minutes.
+            </p>
+          </div>
+        </FadeInView>
+
+        <div className="max-w-5xl mx-auto">
+          <div className="grid gap-8 md:gap-12">
+            {howItWorksSteps.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <motion.div
+                  key={step.title}
+                  initial={{ opacity: 0, x: -50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6, delay: index * 0.2 }}
+                  className="relative"
+                >
+                  <div className="flex items-start gap-6">
+                    <div className="flex-shrink-0">
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground text-2xl font-bold shadow-xl">
+                        {step.number}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <Card className="p-8 border-border/50 bg-card/50 backdrop-blur-sm hover:shadow-xl transition-all duration-300">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-primary/10 rounded-lg">
+                            <Icon className="w-6 h-6 text-primary" />
+                          </div>
+                          <div>
+                            <h3 className="text-2xl font-semibold mb-2">{step.title}</h3>
+                            <p className="text-lg text-muted-foreground">
+                              {step.description}
+                            </p>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+                  {index < howItWorksSteps.length - 1 && (
+                    <div className="hidden md:block absolute left-8 top-20 bottom-0 w-0.5 bg-gradient-to-b from-primary/50 to-transparent" />
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* Features Grid */}
-      <section className="container mx-auto px-4 py-16">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-            Everything You Need, In One Chat
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Seamlessly integrated with Google Workspace. Voice or text. Simple and powerful.
-          </p>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
-          {/* Feature 1 */}
-          <Card className="p-6 border-primary/20 hover:border-primary/40 hover:shadow-lg transition-all duration-300">
-            <div className="p-3 bg-primary/10 rounded-lg w-fit mb-4">
-              <Calendar className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Smart Calendar</h3>
-            <p className="text-muted-foreground">
-              "Block 30 mins tomorrow for team sync" - and it's done. View, create, and manage events naturally.
+      <section className="container mx-auto px-4 py-20 lg:py-28">
+        <FadeInView>
+          <Card className="max-w-4xl mx-auto p-12 md:p-16 text-center border-primary/20 bg-gradient-to-br from-primary/5 to-accent/5 backdrop-blur-sm">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6">
+              Ready to <span className="text-gradient">Transform Your Workflow?</span>
+            </h2>
+            <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
+              Join thousands of professionals who trust Man Friday to streamline their daily tasks.
             </p>
-          </Card>
-
-          {/* Feature 2 */}
-          <Card className="p-6 border-accent/20 hover:border-accent/40 hover:shadow-lg transition-all duration-300">
-            <div className="p-3 bg-accent/10 rounded-lg w-fit mb-4">
-              <Mail className="w-8 h-8 text-accent" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Email Intelligence</h3>
-            <p className="text-muted-foreground">
-              Get smart summaries of important emails. Draft replies with AI. Never miss what matters.
-            </p>
-          </Card>
-
-          {/* Feature 3 */}
-          <Card className="p-6 border-success/20 hover:border-success/40 hover:shadow-lg transition-all duration-300">
-            <div className="p-3 bg-success/10 rounded-lg w-fit mb-4">
-              <CheckSquare className="w-8 h-8 text-success" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Task Management</h3>
-            <p className="text-muted-foreground">
-              "Add review Q4 budget to my tasks" - instant sync with Google Tasks. Check off as you go.
-            </p>
-          </Card>
-
-          {/* Feature 4 */}
-          <Card className="p-6 border-warning/20 hover:border-warning/40 hover:shadow-lg transition-all duration-300">
-            <div className="p-3 bg-warning/10 rounded-lg w-fit mb-4">
-              <Clock className="w-8 h-8 text-warning" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Daily Briefings</h3>
-            <p className="text-muted-foreground">
-              Every morning at 8 AM IST: your schedule, top tasks, and important emails in one message.
-            </p>
-          </Card>
-
-          {/* Feature 5 */}
-          <Card className="p-6 border-primary/20 hover:border-primary/40 hover:shadow-lg transition-all duration-300">
-            <div className="p-3 bg-primary/10 rounded-lg w-fit mb-4">
-              <MessageSquare className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Voice & Text</h3>
-            <p className="text-muted-foreground">
-              Send voice notes while driving. Type when convenient. The AI understands both perfectly.
-            </p>
-          </Card>
-
-          {/* Feature 6 */}
-          <Card className="p-6 border-accent/20 hover:border-accent/40 hover:shadow-lg transition-all duration-300">
-            <div className="p-3 bg-accent/10 rounded-lg w-fit mb-4">
-              <Shield className="w-8 h-8 text-accent" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Privacy First</h3>
-            <p className="text-muted-foreground">
-              Your data, encrypted. Export anytime. Delete anytime. No ads, no selling data. Period.
-            </p>
-          </Card>
-        </div>
-      </section>
-
-      {/* How It Works */}
-      <section className="container mx-auto px-4 py-16">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-center text-foreground mb-12">
-            How It Works
-          </h2>
-          
-          <div className="space-y-8">
-            <div className="flex gap-4 items-start">
-              <div className="flex-shrink-0 w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold text-lg">
-                1
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-2">Connect Your Accounts</h3>
-                <p className="text-muted-foreground">
-                  Link Google Workspace and WhatsApp. One-time setup, secure OAuth. Takes 2 minutes.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 items-start">
-              <div className="flex-shrink-0 w-12 h-12 bg-accent text-accent-foreground rounded-full flex items-center justify-center font-bold text-lg">
-                2
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-2">Chat Naturally</h3>
-                <p className="text-muted-foreground">
-                  Send messages or voice notes. "Remind me to call mom at 7 pm." "What's on my calendar tomorrow?"
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 items-start">
-              <div className="flex-shrink-0 w-12 h-12 bg-success text-success-foreground rounded-full flex items-center justify-center font-bold text-lg">
-                3
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-2">Get Things Done</h3>
-                <p className="text-muted-foreground">
-                  The AI handles the rest. Creates events, sends reminders, summarizes emails, manages tasks.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="container mx-auto px-4 py-20">
-        <Card className="max-w-4xl mx-auto p-12 text-center border-primary/20 bg-gradient-to-br from-primary/5 to-accent/5">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-            Ready to Reclaim Your Time?
-          </h2>
-          <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Join busy professionals who've made WhatsApp their productivity command center.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button 
               size="lg" 
-              className="text-lg px-8 py-6"
+              className="text-xl px-12 py-8 shadow-2xl hover:scale-105 transition-all duration-300"
               onClick={() => navigate('/dashboard')}
             >
+              <MessageSquare className="w-6 h-6 mr-2" />
               Start Free Setup
+              <ArrowRight className="w-6 h-6 ml-2" />
             </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
-              className="text-lg px-8 py-6"
-              onClick={() => navigate('/privacy')}
-            >
-              Read Privacy Policy
-            </Button>
-          </div>
-          <p className="text-sm text-muted-foreground mt-6">
-            Free during beta · No credit card required · Setup in 5 minutes
-          </p>
-        </Card>
+          </Card>
+        </FadeInView>
       </section>
 
-      {/* Footer */}
-      <footer className="container mx-auto px-4 py-8 border-t">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Man Friday. Built with Lovable.</p>
-          <div className="flex gap-6">
-            <a href="/privacy" className="hover:text-foreground transition-colors">Privacy</a>
-            <a href="/TERMS.md" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms</a>
-            <a href="https://docs.lovable.dev" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Docs</a>
+      <footer className="container mx-auto px-4 py-12 border-t border-border/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} Man Friday. Built with Lovable.
+            </p>
+            <div className="flex gap-8 text-sm">
+              <button 
+                onClick={() => navigate('/privacy')}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Privacy Policy
+              </button>
+              <button 
+                onClick={() => navigate('/privacy')}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Terms of Service
+              </button>
+              <a 
+                href="https://docs.lovable.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Documentation
+              </a>
+            </div>
           </div>
         </div>
       </footer>
