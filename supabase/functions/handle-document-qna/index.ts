@@ -180,8 +180,18 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
     // Build system prompt based on operation type
-    let systemPrompt = `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document excerpts. If the answer isn't in the excerpts, say so. Always cite which document the information came from. Keep responses concise (max 200 words).`;
-    let userPrompt = `Documents:\n${contextForAI}\n\nQuestion: ${query}`;
+    let systemPrompt = `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document content. 
+
+CRITICAL FORMAT RULES:
+- Follow the user's format instructions EXACTLY (e.g., "1 line each" means ONE line, not paragraphs)
+- If they say "bullet points", use concise bullets (not multi-sentence paragraphs)
+- If they specify a number (e.g., "5 bullets"), provide exactly that number
+- Do NOT add citations like "(Document: X, Chapter Y)" unless explicitly asked
+- Do NOT add extra explanations or context beyond what was requested
+- Keep responses focused and concise (max 200 words unless user asks for more)
+
+If the answer isn't in the document, say so clearly.`;
+    let userPrompt = `Document content:\n${contextForAI}\n\nUser's request: ${query}`;
     
     if (operation === 'continue_summary') {
       systemPrompt = `You are Maria, a helpful document assistant. The user wants you to CONTINUE a summary that was already started. DO NOT repeat any content from the previous summary. Only add NEW information that comes AFTER what was already covered.`;
