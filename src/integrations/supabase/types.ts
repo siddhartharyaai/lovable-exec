@@ -446,6 +446,7 @@ export type Database = {
           journey_step: number | null
           last_doc: Json | null
           last_doc_summary: string | null
+          last_email_recipient: Json | null
           last_upload_ts: string | null
           last_uploaded_doc_id: string | null
           last_uploaded_doc_name: string | null
@@ -470,6 +471,7 @@ export type Database = {
           journey_step?: number | null
           last_doc?: Json | null
           last_doc_summary?: string | null
+          last_email_recipient?: Json | null
           last_upload_ts?: string | null
           last_uploaded_doc_id?: string | null
           last_uploaded_doc_name?: string | null
@@ -494,6 +496,7 @@ export type Database = {
           journey_step?: number | null
           last_doc?: Json | null
           last_doc_summary?: string | null
+          last_email_recipient?: Json | null
           last_upload_ts?: string | null
           last_uploaded_doc_id?: string | null
           last_uploaded_doc_name?: string | null

@@ -1261,6 +1261,32 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                   traceId 
                 }
               });
+              
+              // ENHANCEMENT: Store this as last_email_recipient for "email X again" follow-ups
+              if (draftResult.data?.success && args.to) {
+                // Get session to extract contact name from recent lookup
+                const { data: emailSession } = await supabase
+                  .from('session_state')
+                  .select('contacts_search_name, contacts_search_results')
+                  .eq('user_id', userId)
+                  .single();
+                
+                // Extract contact name: prioritize recent search name, else parse from email
+                const recipientName = emailSession?.contacts_search_name || 
+                                     args.to.split('@')[0];
+                
+                await supabase.from('session_state').upsert({
+                  user_id: userId,
+                  last_email_recipient: {
+                    name: recipientName,
+                    email: args.to
+                  },
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+                
+                console.log(`[${traceId}] 📧 Stored last email recipient: ${recipientName} (${args.to})`);
+              }
+              
               result = draftResult.data?.message || 'Email draft created';
               break;
 
@@ -1372,17 +1398,34 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
               break;
 
             case 'lookup_contact':
-              // CRITICAL FIX: Check cache first to avoid redundant lookups
-              const { data: cachedSession } = await supabase
+              // ENHANCEMENT: Check if this is a follow-up to recent email ("email X again")
+              const msgLowerForEmail = (userMessage || message || '').toLowerCase();
+              const isEmailAgain = msgLowerForEmail.includes('again') || 
+                                   msgLowerForEmail.includes('also email') ||
+                                   msgLowerForEmail.includes('send another');
+              
+              // Get session to check last_email_recipient
+              const { data: sessionForEmail } = await supabase
                 .from('session_state')
-                .select('contacts_search_results, contacts_search_name, contacts_search_timestamp')
+                .select('last_email_recipient, contacts_search_results, contacts_search_name, contacts_search_timestamp')
                 .eq('user_id', userId)
                 .single();
               
               const searchName = (args.name || '').toLowerCase().trim();
-              const cachedName = cachedSession?.contacts_search_name?.toLowerCase().trim();
-              const cachedTimestamp = cachedSession?.contacts_search_timestamp;
-              const cachedContacts = cachedSession?.contacts_search_results;
+              const lastRecipient = sessionForEmail?.last_email_recipient;
+              const lastRecipientName = lastRecipient?.name?.toLowerCase().trim();
+              
+              // OPTIMIZATION: If "email X again" and X matches last recipient, skip lookup
+              if (isEmailAgain && lastRecipient && lastRecipientName === searchName) {
+                console.log(`[${traceId}] 📧 Reusing last email recipient: ${lastRecipient.name} (${lastRecipient.email})`);
+                result = `Using ${lastRecipient.name} (${lastRecipient.email})`;
+                break;
+              }
+              
+              // Check search cache for other cases
+              const cachedName = sessionForEmail?.contacts_search_name?.toLowerCase().trim();
+              const cachedTimestamp = sessionForEmail?.contacts_search_timestamp;
+              const cachedContacts = sessionForEmail?.contacts_search_results;
               
               // Use cache if: same name, has contacts, and timestamp is within 15 minutes
               const cacheValid = cachedName === searchName && 
