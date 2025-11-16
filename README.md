@@ -1,73 +1,136 @@
-# Welcome to your Lovable project
+# Maria - WhatsApp AI Executive Assistant
 
-## Project info
+An intelligent WhatsApp-based personal assistant that integrates with Google Workspace to manage your calendar, tasks, emails, documents, and more through natural conversation.
 
-**URL**: https://lovable.dev/projects/6e97bd32-02a0-40a5-a284-d08d734b7d96
+## What Can Maria Do?
 
-## How can I edit this code?
+- 📅 **Calendar Management**: View, create, and delete events using natural language
+- ✅ **Task Management**: Create, complete, and manage Google Tasks
+- 📧 **Email Assistance**: Summarize inbox, mark as read, draft emails with contact lookup
+- 📄 **Document Q&A**: Upload PDFs/docs and ask questions about content (supports 150+ page documents)
+- ⏰ **Smart Reminders**: Set reminders with natural language ("remind me tomorrow at 3pm")
+- 🔍 **Web Search**: Real-time weather, news, and general web queries
+- 🎤 **Voice Transcription**: Automatically transcribe WhatsApp voice messages
+- 🌍 **Translation**: Auto-detect language and translate (100+ languages)
+- 📂 **Drive Search**: Find and read documents from Google Drive
+- 📨 **Daily Briefing**: Automated morning summary (8 AM IST) with weather, calendar, tasks, emails
 
-There are several ways of editing your application.
+## Tech Stack
 
-**Use Lovable**
+- **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn-ui
+- **Backend**: Lovable Cloud (Supabase) - 25 edge functions
+- **Messaging**: Twilio WhatsApp Business API
+- **AI**: Lovable AI (Gemini 2.5 Flash)
+- **Integrations**: Google Workspace APIs (Calendar, Gmail, Tasks, Contacts, Drive)
+- **External APIs**: Deepgram (voice), SerpAPI (search), Firecrawl (scraping)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/6e97bd32-02a0-40a5-a284-d08d734b7d96) and start prompting.
+## Required API Keys & Setup
 
-Changes made via Lovable will be committed automatically to this repo.
+### 1. Twilio WhatsApp
+- Account SID and Auth Token
+- WhatsApp-enabled phone number
+- Webhook configured to: `https://<your-project>.lovable.app/whatsapp-webhook`
 
-**Use your preferred IDE**
+### 2. Google Cloud Console
+- OAuth 2.0 Client ID and Secret
+- Enable APIs: Calendar, Gmail, Tasks, Contacts, Drive, People API
+- Authorized redirect URIs configured
+- OAuth consent screen configured
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### 3. External Services (Configure in Lovable Cloud Secrets)
+- `LOVABLE_API_KEY` - AI processing
+- `DEEPGRAM_API_KEY` - Voice transcription
+- `SERP_API_KEY` - Web search
+- `FIRECRAWL_API_KEY` - Website scraping
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Quick Start
 
-Follow these steps:
+### For End Users
+1. Send the Twilio sandbox join code to the WhatsApp number (for testing)
+2. Text "Hi" to Maria to start conversation
+3. Complete Google OAuth by visiting the provided link
+4. Set your city: "Set my city to Bangalore"
+5. Start using: "What's on my calendar today?"
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### For Developers
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+**Local Development:**
+```bash
+git clone <your-repo-url>
+cd <project-name>
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+**Deploy Edge Functions:**
+All edge functions auto-deploy when you push to the repo (if connected to Lovable).
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+**Database Migrations:**
+Migrations in `supabase/migrations/` are auto-applied via Lovable Cloud.
 
-**Use GitHub Codespaces**
+## Key Files
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- **Edge Functions**: `supabase/functions/` (25 serverless functions)
+- **Database Schema**: `supabase/migrations/`
+- **Frontend Pages**: `src/pages/` (Dashboard, Settings, Privacy)
+- **Supabase Client**: `src/integrations/supabase/` (auto-generated, do not edit)
 
-## What technologies are used for this project?
+## Documentation
 
-This project is built with:
+- **[NEW_USER_ONBOARDING_GUIDE.md](./NEW_USER_ONBOARDING_GUIDE.md)**: Step-by-step user onboarding
+- **[RUNBOOK.md](./RUNBOOK.md)**: Operational procedures for incidents and troubleshooting
+- **[TEST_SUITE.md](./TEST_SUITE.md)**: Comprehensive test cases for all features
+- **[PRD.md](./PRD.md)**: Product requirements and use cases
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: System design and data flow
+- **[BACKLOG.md](./BACKLOG.md)**: Nice-to-have features (not blocking MVP)
+- **[MVP_COMPLETION.md](./MVP_COMPLETION.md)**: MVP completion criteria and acceptance tests
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Testing
 
-## How can I deploy this project?
+### Manual Testing
+See `TEST_SUITE.md` and `END_TO_END_TEST_PLAN.md` for comprehensive test scenarios.
 
-Simply open [Lovable](https://lovable.dev/projects/6e97bd32-02a0-40a5-a284-d08d734b7d96) and click on Share -> Publish.
+### Automated Testing
+(To be implemented - see MVP_COMPLETION.md for details)
 
-## Can I connect a custom domain to my Lovable project?
+## Deployment
 
-Yes, you can!
+**Frontend:**
+1. Click "Publish" in Lovable editor (top right)
+2. Click "Update" to deploy latest changes
+3. Frontend is live at: `https://<your-project>.lovable.app`
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+**Backend (Edge Functions):**
+- Auto-deploys on every code push (no manual action needed)
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Monitoring & Logs
+
+- **Audit Log**: `audit_log` table captures all actions with trace IDs
+- **Error Logs**: `logs` table records failures with stack traces
+- **Edge Function Logs**: View in Lovable Cloud → Functions → [function name] → Logs
+
+## Cron Jobs (Scheduled Tasks)
+
+- `check-due-reminders`: Every 1 minute
+- `daily-briefing`: Daily at 8 AM IST
+- `check-birthday-reminders`: Daily at 8 AM IST
+
+## Known Limitations
+
+- Twilio Sandbox: 50 messages/day limit (upgrade to production for unlimited)
+- Document Processing: First 150 pages of large PDFs (truncation notice shown)
+- Google API Rate Limits: Standard quotas apply
+
+## Support & Issues
+
+- Check `RUNBOOK.md` for common incidents and resolutions
+- Review `audit_log` table for detailed trace of actions
+- Edge function logs show detailed errors with trace IDs
+
+## License
+
+MIT
+
+---
+
+**Project URL**: https://lovable.dev/projects/6e97bd32-02a0-40a5-a284-d08d734b7d96
