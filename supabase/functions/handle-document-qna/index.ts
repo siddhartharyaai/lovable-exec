@@ -250,6 +250,31 @@ serve(async (req) => {
     
     const answer = aiData.choices[0]?.message?.content || 'Unable to generate summary';
     
+    // CRITICAL: Validate response completeness
+    // Check if response is empty, too short, or potentially truncated
+    if (!answer || answer.trim().length === 0) {
+      console.error(`[${traceId}] 🔥 AI returned empty response`);
+      throw new Error('AI returned an empty response. Please try rephrasing your question.');
+    }
+    
+    // For multi-part queries (containing multiple questions), expect substantial content
+    const queryText = query.toLowerCase();
+    const isMultiPart = (queryText.match(/\band\b/g) || []).length >= 2 || 
+                        (queryText.match(/\,/g) || []).length >= 2;
+    
+    if (isMultiPart && answer.length < 200) {
+      console.error(`[${traceId}] 🔥 Response too short for multi-part query: ${answer.length} chars`);
+      throw new Error('The response seems incomplete. Try breaking your question into separate parts, or ask me one thing at a time.');
+    }
+    
+    // Check if response was likely truncated (ends mid-sentence without punctuation)
+    const lastChar = answer.trim().slice(-1);
+    const endsProperlyRough = ['.', '!', '?', ':', ')'].includes(lastChar) || answer.trim().endsWith('...');
+    if (!endsProperlyRough && answer.length > 500) {
+      console.warn(`[${traceId}] ⚠️ Response may be truncated (ends with: "${lastChar}")`);
+      // Don't throw error, but log warning - response might still be useful
+    }
+    
     // Build the full accumulated summary
     let fullSummary = answer;
     if (operation === 'continue_summary' && previousSummary) {
@@ -258,7 +283,7 @@ serve(async (req) => {
     
     const message = `📄 **${targetDoc.filename}**\n\n${answer}`;
 
-    console.log(`[${traceId}] ✅ Document summary generated successfully (operation: ${operation})`);
+    console.log(`[${traceId}] ✅ Document summary generated successfully (operation: ${operation}, length: ${answer.length} chars)`);
 
     return new Response(
       JSON.stringify({ 

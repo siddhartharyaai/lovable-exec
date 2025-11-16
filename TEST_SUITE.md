@@ -278,6 +278,16 @@
 | 2 | "Find Rohan's phone number" | lookup_contact("Rohan") → returns phone | ⏳ TO TEST | - |
 | 3 | "Do I have Sarah's contact?" | Checks if contact exists | ⏳ TO TEST | - |
 
+### Contact Cache (CRITICAL - Nov 16 Fix)
+
+| # | User Query Sequence | Expected Behavior | Status | Last Tested |
+|---|---------------------|-------------------|--------|-------------|
+| 4a | "Email Rohan about meeting" → system finds contacts → user selects | First lookup hits API, caches results | ⏳ TO TEST | - |
+| 4b | "Also schedule call with Rohan tomorrow" (within 15 min) | Should use cached results, NO "Which Rohan?" prompt | ⏳ TO TEST | - |
+| 4c | Wait 20 minutes → "Email Rohan again" | Cache expired → fresh lookup, show disambiguation again | ⏳ TO TEST | - |
+| 5 | "Find John's email" → "Find Rohan's email" | Different names → separate cache entries, no conflict | ⏳ TO TEST | - |
+| 6 | First message: "Email Rohan..." → Response: "I couldn't find Rohan" → Next message: any text | Should NOT suddenly find Rohan on second try (was bug) | ⏳ TO TEST | - |
+
 ### Contact Creation
 
 | # | User Query | Expected Behavior | Status | Last Tested |
