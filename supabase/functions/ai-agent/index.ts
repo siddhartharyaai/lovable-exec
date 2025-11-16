@@ -1372,28 +1372,56 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
               break;
 
             case 'lookup_contact':
-              const contactResult = await supabase.functions.invoke('handle-contacts', {
-                body: { 
-                  intent: { 
-                    entities: { name: args.name } 
-                  }, 
-                  userId, 
-                  traceId 
-                }
-              });
+              // CRITICAL FIX: Check cache first to avoid redundant lookups
+              const { data: cachedSession } = await supabase
+                .from('session_state')
+                .select('contacts_search_results, contacts_search_name, contacts_search_timestamp')
+                .eq('user_id', userId)
+                .single();
               
-              // Store ALL contact results in session_state for follow-up questions
-              if (contactResult.data?.contacts && contactResult.data.contacts.length > 0) {
-                await supabase.from('session_state').upsert({
-                  user_id: userId,
-                  contacts_search_results: contactResult.data.contacts,
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id' });
-                
-                const contact = contactResult.data.contacts[0];
-                result = contactResult.data.message || `Found contact: ${contact.name}${contact.emails?.[0] ? ` (${contact.emails[0]})` : ''}`;
+              const searchName = (args.name || '').toLowerCase().trim();
+              const cachedName = cachedSession?.contacts_search_name?.toLowerCase().trim();
+              const cachedTimestamp = cachedSession?.contacts_search_timestamp;
+              const cachedContacts = cachedSession?.contacts_search_results;
+              
+              // Use cache if: same name, has contacts, and timestamp is within 15 minutes
+              const cacheValid = cachedName === searchName && 
+                                 cachedContacts && 
+                                 cachedContacts.length > 0 &&
+                                 cachedTimestamp &&
+                                 (new Date().getTime() - new Date(cachedTimestamp).getTime()) < 15 * 60 * 1000;
+              
+              if (cacheValid) {
+                console.log(`[${traceId}] 🎯 Using cached contact results for "${searchName}" (${cachedContacts.length} contacts)`);
+                const contact = cachedContacts[0];
+                result = `Found contact: ${contact.name}${contact.emails?.[0] ? ` (${contact.emails[0]})` : ''}`;
               } else {
-                result = contactResult.data?.message || 'No contact found';
+                console.log(`[${traceId}] 🔍 Fetching fresh contact results for "${searchName}" (cache ${cacheValid ? 'valid' : 'invalid'})`);
+                const contactResult = await supabase.functions.invoke('handle-contacts', {
+                  body: { 
+                    intent: { 
+                      entities: { name: args.name } 
+                    }, 
+                    userId, 
+                    traceId 
+                  }
+                });
+                
+                // Store ALL contact results in session_state for follow-up questions
+                if (contactResult.data?.contacts && contactResult.data.contacts.length > 0) {
+                  await supabase.from('session_state').upsert({
+                    user_id: userId,
+                    contacts_search_results: contactResult.data.contacts,
+                    contacts_search_name: searchName,
+                    contacts_search_timestamp: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                  }, { onConflict: 'user_id' });
+                  
+                  const contact = contactResult.data.contacts[0];
+                  result = contactResult.data.message || `Found contact: ${contact.name}${contact.emails?.[0] ? ` (${contact.emails[0]})` : ''}`;
+                } else {
+                  result = contactResult.data?.message || 'No contact found';
+                }
               }
               break;
 

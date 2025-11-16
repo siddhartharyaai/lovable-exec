@@ -435,6 +435,9 @@ export type Database = {
         Row: {
           clarify_sent_at: string | null
           confirmation_pending: Json | null
+          contacts_search_name: string | null
+          contacts_search_results: Json | null
+          contacts_search_timestamp: string | null
           context: Json | null
           current_topic: string | null
           drive_search_results: Json | null
@@ -456,6 +459,9 @@ export type Database = {
         Insert: {
           clarify_sent_at?: string | null
           confirmation_pending?: Json | null
+          contacts_search_name?: string | null
+          contacts_search_results?: Json | null
+          contacts_search_timestamp?: string | null
           context?: Json | null
           current_topic?: string | null
           drive_search_results?: Json | null
@@ -477,6 +483,9 @@ export type Database = {
         Update: {
           clarify_sent_at?: string | null
           confirmation_pending?: Json | null
+          contacts_search_name?: string | null
+          contacts_search_results?: Json | null
+          contacts_search_timestamp?: string | null
           context?: Json | null
           current_topic?: string | null
           drive_search_results?: Json | null
