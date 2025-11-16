@@ -1,8 +1,8 @@
-# Maria - WhatsApp AI Executive Assistant
+# Man Friday - WhatsApp AI Executive Assistant
 
 An intelligent WhatsApp-based personal assistant that integrates with Google Workspace to manage your calendar, tasks, emails, documents, and more through natural conversation.
 
-## What Can Maria Do?
+## What Can Man Friday Do?
 
 - 📅 **Calendar Management**: View, create, and delete events using natural language
 - ✅ **Task Management**: Create, complete, and manage Google Tasks
@@ -47,7 +47,7 @@ An intelligent WhatsApp-based personal assistant that integrates with Google Wor
 
 ### For End Users
 1. Send the Twilio sandbox join code to the WhatsApp number (for testing)
-2. Text "Hi" to Maria to start conversation
+2. Text "Hi" to Man Friday to start conversation
 3. Complete Google OAuth by visiting the provided link
 4. Set your city: "Set my city to Bangalore"
 5. Start using: "What's on my calendar today?"

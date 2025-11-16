@@ -16,15 +16,18 @@ const Index = () => {
             <span className="text-sm font-medium text-primary">Powered by Lovable AI</span>
           </div>
           
-          <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6 leading-tight">
-            Your AI Executive Assistant
-            <br />
-            <span className="text-primary">Right in WhatsApp</span>
+          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
+            Man Friday, your
+            <span className="block text-primary">AI Executive Assistant</span>
+            <span className="block text-muted-foreground text-xl md:text-2xl">
+              right inside WhatsApp.
+            </span>
           </h1>
           
-          <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Manage your calendar, email, tasks, and more through natural conversation. 
-            Get proactive briefings and never miss what matters.
+          <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
+            Manage your calendar, email, tasks, and documents in a single WhatsApp chat.
+            Man Friday gives you proactive briefings, smart reminders, and fast summaries
+            so you can focus on the work that actually matters.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
@@ -227,7 +230,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="container mx-auto px-4 py-8 border-t">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-          <p>© 2025 AI Executive Assistant. Built with Lovable.</p>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Man Friday. Built with Lovable.</p>
           <div className="flex gap-6">
             <a href="/privacy" className="hover:text-foreground transition-colors">Privacy</a>
             <a href="/TERMS.md" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Terms</a>

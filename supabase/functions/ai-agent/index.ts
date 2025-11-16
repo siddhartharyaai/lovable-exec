@@ -549,7 +549,7 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
     ? preferences.map((p: any) => `• ${p.preference_type}: ${JSON.stringify(p.preference_value)}`).join('\n')
     : 'None yet';
 
-  return `You are the ORCHESTRATOR AGENT for Maria, a WhatsApp-based executive assistant.
+  return `You are the ORCHESTRATOR AGENT for Man Friday, a WhatsApp-based AI executive assistant.
 
 ENVIRONMENT:
 - Users talk on WhatsApp (voice notes, casual language, partial sentences)
