@@ -143,12 +143,14 @@ const Dashboard = () => {
       <div className="container mx-auto px-4 py-12">
         {/* Header */}
         <header className="mb-12">
-          <h1 className="text-4xl font-bold text-foreground mb-2">
-            AI Executive Assistant
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            Your WhatsApp-powered productivity companion
-          </p>
+          <div className="mb-6 space-y-1">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+              Man Friday
+            </h1>
+            <p className="text-muted-foreground">
+              Your WhatsApp-powered AI executive assistant.
+            </p>
+          </div>
         </header>
 
         {/* Main Content */}

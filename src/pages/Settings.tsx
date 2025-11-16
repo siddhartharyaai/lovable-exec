@@ -250,7 +250,7 @@ const Settings = () => {
           </Button>
           <h1 className="text-4xl font-bold text-foreground mb-2">Settings</h1>
           <p className="text-muted-foreground text-lg">
-            Manage your connections and preferences
+            Manage your connections and preferences for Man Friday.
           </p>
         </div>
 

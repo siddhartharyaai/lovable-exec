@@ -40,7 +40,8 @@ const Privacy = () => {
             <h1 className="text-4xl font-bold text-foreground">Privacy & Data Control</h1>
           </div>
           <p className="text-muted-foreground text-lg">
-            Your data, your control. Export or delete your information anytime.
+            Your data, your control. Export or delete your information anytime while
+            using Man Friday, your AI executive assistant in WhatsApp.
           </p>
         </div>
 
