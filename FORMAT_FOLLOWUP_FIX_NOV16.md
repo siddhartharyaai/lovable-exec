@@ -79,8 +79,31 @@ case 'lookup_contact':
   const lastRecipient = sessionForEmail?.last_email_recipient;
   const lastRecipientName = lastRecipient?.name?.toLowerCase().trim();
   
-  // OPTIMIZATION: If "email X again" and X matches last recipient, skip lookup
-  if (isEmailAgain && lastRecipient && lastRecipientName === searchName) {
+  // DEBUG LOGGING
+  console.log('Contact lookup debug:', {
+    isEmailAgain, searchName, lastRecipientName, 
+    hasLastRecipient: !!lastRecipient
+  });
+  
+  // OPTIMIZATION: Detect reuse scenarios
+  let shouldReuseLastRecipient = false;
+  
+  if (isEmailAgain && lastRecipient) {
+    // Case 1: args.name matches last recipient
+    if (searchName && lastRecipientName === searchName) {
+      shouldReuseLastRecipient = true;
+    }
+    // Case 2: No args.name but message contains last recipient's name
+    else if (!searchName && lastRecipientName && msgLowerForEmail.includes(lastRecipientName)) {
+      shouldReuseLastRecipient = true;
+    }
+    // Case 3: No args.name at all, just "again" - reuse anyway
+    else if (!searchName) {
+      shouldReuseLastRecipient = true;
+    }
+  }
+  
+  if (shouldReuseLastRecipient) {
     console.log(`Reusing last email recipient: ${lastRecipient.name}`);
     result = `Using ${lastRecipient.name} (${lastRecipient.email})`;
     break;
@@ -102,8 +125,23 @@ case 'create_email_draft':
       .eq('user_id', userId)
       .single();
     
-    const recipientName = emailSession?.contacts_search_name || 
-                         args.to.split('@')[0];
+    // Extract contact name: prioritize actual contact name from results
+    let recipientName = emailSession?.contacts_search_name;
+    
+    // Try to find exact contact by email in cached results
+    if (emailSession?.contacts_search_results) {
+      const matchingContact = emailSession.contacts_search_results.find(
+        (c: any) => c.emails?.some((e: string) => e.toLowerCase() === args.to.toLowerCase())
+      );
+      if (matchingContact?.name) {
+        recipientName = matchingContact.name;
+      }
+    }
+    
+    // Fallback to email username
+    if (!recipientName) {
+      recipientName = args.to.split('@')[0];
+    }
     
     await supabase.from('session_state').upsert({
       user_id: userId,
@@ -121,9 +159,17 @@ case 'create_email_draft':
 **Behavior After Fix**:
 1. "Email Rohan..." → Select contact → stored in `last_email_recipient`
 2. "Email Rohan again and..." → Instantly reuses stored contact, no lookup
-3. "Also email Rohan" → Same optimization
-4. "Email John" → Different name, triggers normal lookup
-5. After 15 min of no activity → Cache expires, fresh lookup on next request
+3. "Email again" (no name) → Reuses last recipient automatically
+4. "Also email Rohan" → Same optimization
+5. "Email John" → Different name, triggers normal lookup
+6. After 15 min of no activity → Cache expires, fresh lookup on next request
+
+**Edge Cases Handled**:
+- **args.name is undefined**: Falls back to message text analysis or just reuses last recipient if "again" detected
+- **Name mismatch**: Only triggers reuse if names match OR args.name is empty with "again"
+- **First email vs follow-up**: First email always does lookup + stores; follow-ups skip lookup
+- **Multiple follow-ups**: Can do "email X again" multiple times, each reuses the same contact
+- **Accurate name extraction**: Matches email address against cached contacts to get exact name
 
 ---
 
@@ -177,8 +223,11 @@ case 'create_email_draft':
 1. **Multi-part format requests**: "5 bullets, 1 line each, no citations" → All constraints respected
 2. **Similar names**: "Email Rohan" then "Email Rohit" → Different names, separate lookups
 3. **Cache expiry**: 15 min session timeout for contact data
-4. **Ambiguous "again"**: Only triggers optimization if name matches last_email_recipient
+4. **Ambiguous "again"**: Triggers optimization even if name is missing from args
 5. **Missing session data**: Falls back to normal lookup if no last_email_recipient stored
+6. **args.name undefined**: System checks message text and falls back to reusing last recipient
+7. **Exact name matching**: Finds contact by email in cached results to store accurate name
+8. **Multiple follow-ups**: "Email X again" works multiple times in sequence
 
 ---
 

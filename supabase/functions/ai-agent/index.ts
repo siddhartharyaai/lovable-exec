@@ -1271,9 +1271,23 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                   .eq('user_id', userId)
                   .single();
                 
-                // Extract contact name: prioritize recent search name, else parse from email
-                const recipientName = emailSession?.contacts_search_name || 
-                                     args.to.split('@')[0];
+                // Extract contact name: prioritize actual contact name from results, then search name, else parse from email
+                let recipientName = emailSession?.contacts_search_name;
+                
+                // Try to find exact contact by email in cached results
+                if (emailSession?.contacts_search_results) {
+                  const matchingContact = emailSession.contacts_search_results.find(
+                    (c: any) => c.emails?.some((e: string) => e.toLowerCase() === args.to.toLowerCase())
+                  );
+                  if (matchingContact?.name) {
+                    recipientName = matchingContact.name;
+                  }
+                }
+                
+                // Fallback to email username
+                if (!recipientName) {
+                  recipientName = args.to.split('@')[0];
+                }
                 
                 await supabase.from('session_state').upsert({
                   user_id: userId,
@@ -1284,7 +1298,7 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                   updated_at: new Date().toISOString()
                 }, { onConflict: 'user_id' });
                 
-                console.log(`[${traceId}] 📧 Stored last email recipient: ${recipientName} (${args.to})`);
+                console.log(`[${traceId}] 💾 Stored last_email_recipient: ${recipientName} (${args.to})`);
               }
               
               result = draftResult.data?.message || 'Email draft created';
@@ -1415,9 +1429,36 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
               const lastRecipient = sessionForEmail?.last_email_recipient;
               const lastRecipientName = lastRecipient?.name?.toLowerCase().trim();
               
-              // OPTIMIZATION: If "email X again" and X matches last recipient, skip lookup
-              if (isEmailAgain && lastRecipient && lastRecipientName === searchName) {
-                console.log(`[${traceId}] 📧 Reusing last email recipient: ${lastRecipient.name} (${lastRecipient.email})`);
+              // DEBUG LOGGING
+              console.log(`[${traceId}] 🔍 Contact lookup debug:`, {
+                isEmailAgain,
+                searchName,
+                lastRecipientName,
+                hasLastRecipient: !!lastRecipient,
+                argsName: args.name,
+                message: msgLowerForEmail.substring(0, 100)
+              });
+              
+              // OPTIMIZATION 1: If "again" and last recipient exists, check if it matches
+              let shouldReuseLastRecipient = false;
+              
+              if (isEmailAgain && lastRecipient) {
+                // Case 1: args.name matches last recipient name
+                if (searchName && lastRecipientName === searchName) {
+                  shouldReuseLastRecipient = true;
+                }
+                // Case 2: No args.name but message contains last recipient's name
+                else if (!searchName && lastRecipientName && msgLowerForEmail.includes(lastRecipientName)) {
+                  shouldReuseLastRecipient = true;
+                }
+                // Case 3: No args.name and no name in message, but "again" detected - just reuse
+                else if (!searchName) {
+                  shouldReuseLastRecipient = true;
+                }
+              }
+              
+              if (shouldReuseLastRecipient) {
+                console.log(`[${traceId}] ✅ Reusing last email recipient: ${lastRecipient.name} (${lastRecipient.email})`);
                 result = `Using ${lastRecipient.name} (${lastRecipient.email})`;
                 break;
               }
