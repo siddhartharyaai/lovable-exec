@@ -730,7 +730,7 @@ serve(async (req) => {
         console.log(`[${traceId}] User cancelled or reset conversation`);
         replyText = "Okay, cancelled. What would you like me to help with?";
         
-        // Clear ALL session state fields to prevent stuck conversations
+        // Clear session state BUT preserve last_email_recipient for "again" reuse
         await supabase.from('session_state').upsert({
           user_id: userId,
           confirmation_pending: null,
@@ -743,7 +743,7 @@ serve(async (req) => {
           last_doc_summary: null,
           pending_email_draft_id: null,
           pending_email_draft_type: null,
-          last_email_recipient: null,
+          // DO NOT clear last_email_recipient - preserve for "Email X again" reuse
           drive_search_results: null,
           drive_search_timestamp: null,
           journey_state: null,
@@ -870,7 +870,7 @@ serve(async (req) => {
         // Greetings should never continue old workflows
         console.log(`[${traceId}] Greeting/smalltalk detected - clearing ALL session state`);
         
-        // Clear ALL session state fields to prevent old intents from being resurrected
+        // Clear session state BUT preserve last_email_recipient for "again" reuse
         await supabase.from('session_state').upsert({
           user_id: userId,
           confirmation_pending: null,
@@ -881,7 +881,7 @@ serve(async (req) => {
           current_topic: null,
           pending_email_draft_id: null,
           pending_email_draft_type: null,
-          last_email_recipient: null,
+          // DO NOT clear last_email_recipient - preserve for "Email X again" reuse
           drive_search_results: null,
           drive_search_timestamp: null,
           journey_state: null,
