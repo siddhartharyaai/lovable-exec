@@ -696,6 +696,15 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     
+    // FIX 1: Handle greeting_smalltalk with branded intro
+    if (classifiedIntent === 'greeting_smalltalk') {
+      console.log(`[${traceId}] ✅ Returning branded Man Friday greeting`);
+      const message = "I am Man Friday, your AI executive assistant. I can help you with your calendar, emails, tasks, reminders, and documents, all from WhatsApp. How can I assist you today?";
+      return new Response(JSON.stringify({ message }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     // HARD OVERRIDE: Email intent verbs always win over doc detection
     const msgLower = finalMessage.toLowerCase();
     const emailVerbs = [
@@ -1463,17 +1472,34 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
               let shouldReuseLastRecipient = false;
               
               if (isEmailAgain && lastRecipient) {
-                // Case 1: args.name matches last recipient name
+                // FIX 2: Fuzzy first-name matching for contact reuse
+                const searchFirstName = searchName ? searchName.split(' ')[0] : '';
+                const lastFirstName = lastRecipientName ? lastRecipientName.split(' ')[0] : '';
+                
+                // Case 1: Exact match on full name
                 if (searchName && lastRecipientName === searchName) {
                   shouldReuseLastRecipient = true;
+                  console.log(`[${traceId}] ✅ Exact name match: "${searchName}" = "${lastRecipientName}"`);
                 }
-                // Case 2: No args.name but message contains last recipient's name
+                // Case 2: First name match (e.g., "rohan" matches "rohan damani")
+                else if (searchFirstName && lastFirstName && searchFirstName === lastFirstName) {
+                  shouldReuseLastRecipient = true;
+                  console.log(`[${traceId}] ✅ First name match: "${searchFirstName}" → "${lastRecipientName}"`);
+                }
+                // Case 3: searchName is substring of lastRecipientName
+                else if (searchName && lastRecipientName && lastRecipientName.includes(searchName)) {
+                  shouldReuseLastRecipient = true;
+                  console.log(`[${traceId}] ✅ Substring match: "${searchName}" in "${lastRecipientName}"`);
+                }
+                // Case 4: No args.name but message contains last recipient's name
                 else if (!searchName && lastRecipientName && msgLowerForEmail.includes(lastRecipientName)) {
                   shouldReuseLastRecipient = true;
+                  console.log(`[${traceId}] ✅ Message contains last recipient name`);
                 }
-                // Case 3: No args.name and no name in message, but "again" detected - just reuse
+                // Case 5: No args.name and no name in message, but "again" detected - just reuse
                 else if (!searchName) {
                   shouldReuseLastRecipient = true;
+                  console.log(`[${traceId}] ✅ "Again" with no name → reusing last recipient`);
                 }
               }
               
