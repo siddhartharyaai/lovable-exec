@@ -390,8 +390,40 @@ Keep total response under 1200 characters.`
       }
 
     } else if (intent.type === 'gmail_send_approved' || intent.type === 'gmail_reply_approved') {
-      // Send approved draft
-      const { draftId, to, subject, body, messageId } = intent.entities;
+      // Send approved draft - get draft ID from session state if not provided
+      let { draftId, to, subject, body, messageId } = intent.entities;
+      
+      if (!draftId) {
+        // Retrieve from session state
+        const { data: sessionData } = await supabase
+          .from('session_state')
+          .select('pending_email_draft_id')
+          .eq('user_id', userId)
+          .single();
+        
+        if (!sessionData?.pending_email_draft_id) {
+          throw new Error('No pending email draft found');
+        }
+        
+        draftId = sessionData.pending_email_draft_id;
+        
+        // Retrieve draft details
+        const { data: draftData } = await supabase
+          .from('email_drafts')
+          .select('*')
+          .eq('id', draftId)
+          .single();
+        
+        if (!draftData) {
+          throw new Error('Draft not found');
+        }
+        
+        to = draftData.to_email;
+        subject = draftData.subject;
+        body = draftData.body;
+        messageId = draftData.message_id;
+        intent.type = draftData.type === 'send' ? 'gmail_send_approved' : 'gmail_reply_approved';
+      }
       
       if (intent.type === 'gmail_send_approved') {
         // Send new email
@@ -418,11 +450,16 @@ Keep total response under 1200 characters.`
           throw new Error('Failed to send email');
         }
 
-        // Update draft status
+        // Update draft status and clear session
         await supabase
           .from('email_drafts')
           .update({ status: 'sent', sent_at: new Date().toISOString() })
           .eq('id', draftId);
+
+        await supabase
+          .from('session_state')
+          .update({ pending_email_draft_id: null, pending_email_draft_type: null })
+          .eq('user_id', userId);
 
         message = `✅ Email sent to ${to}!`;
       } else {
@@ -451,13 +488,56 @@ Keep total response under 1200 characters.`
           throw new Error('Failed to send reply');
         }
 
-        // Update draft status
+        // Update draft status and clear session
         await supabase
           .from('email_drafts')
           .update({ status: 'sent', sent_at: new Date().toISOString() })
           .eq('id', draftId);
 
+        await supabase
+          .from('session_state')
+          .update({ pending_email_draft_id: null, pending_email_draft_type: null })
+          .eq('user_id', userId);
+
         message = `✅ Reply sent!`;
+      }
+    } else if (intent.type === 'gmail_cancel_draft') {
+      // Cancel pending draft
+      const { data: sessionData } = await supabase
+        .from('session_state')
+        .select('pending_email_draft_id')
+        .eq('user_id', userId)
+        .single();
+      
+      if (!sessionData?.pending_email_draft_id) {
+        message = '❌ No pending email draft to cancel.';
+      } else {
+        // Update draft status to cancelled
+        await supabase
+          .from('email_drafts')
+          .update({ status: 'cancelled' })
+          .eq('id', sessionData.pending_email_draft_id);
+        
+        // Clear session
+        await supabase
+          .from('session_state')
+          .update({ pending_email_draft_id: null, pending_email_draft_type: null })
+          .eq('user_id', userId);
+        
+        message = '🗑️ Email draft discarded.';
+      }
+    } else if (intent.type === 'gmail_edit_draft') {
+      // User wants to edit - guide them
+      const { data: sessionData } = await supabase
+        .from('session_state')
+        .select('pending_email_draft_id')
+        .eq('user_id', userId)
+        .single();
+      
+      if (!sessionData?.pending_email_draft_id) {
+        message = '❌ No pending email draft to edit.';
+      } else {
+        message = '✏️ To edit this email, just send me a new message with your changes. For example:\n\n"Change the subject to..." or\n"Add this to the email body: ..." or\n"Actually, email him about..."';
       }
     } else if (intent.type === 'gmail_send' || intent.type === 'gmail_reply') {
       // Draft approval workflow - store draft in database
@@ -483,11 +563,21 @@ Keep total response under 1200 characters.`
         throw new Error('Failed to create email draft');
       }
 
+      // Store draft ID in session state for simple approval flow
+      await supabase
+        .from('session_state')
+        .upsert({
+          user_id: userId,
+          pending_email_draft_id: draft.id,
+          pending_email_draft_type: draftType,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
       message = `📧 **Email Draft Created**\n\n`;
       if (to) message += `**To:** ${to}\n`;
       if (subject) message += `**Subject:** ${subject}\n`;
       message += `\n${body}\n\n`;
-      message += `---\n\n⚠️ Reply "send ${draft.id.substring(0, 8)}" to send this email, or "cancel ${draft.id.substring(0, 8)}" to discard.`;
+      message += `---\n\n📧 Reply **Send** to send, **Edit** to change, or **Cancel** to discard.`;
     } else {
       message = 'Gmail action not yet implemented';
     }

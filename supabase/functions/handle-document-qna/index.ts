@@ -150,7 +150,7 @@ serve(async (req) => {
           messages: [
             {
               role: 'system',
-              content: `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document excerpts. Keep responses concise (max 200 words).`
+              content: `You are Man Friday, a helpful document assistant. Answer the user's question based ONLY on the provided document excerpts. Keep responses concise (max 200 words).`
             },
             {
               role: 'user',
@@ -180,7 +180,7 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
     // Build system prompt based on operation type
-    let systemPrompt = `You are Maria, a helpful document assistant. Answer the user's question based ONLY on the provided document content. 
+    let systemPrompt = `You are Man Friday, a helpful document assistant. Answer the user's question based ONLY on the provided document content. 
 
 CRITICAL FORMAT RULES:
 - Follow the user's format instructions EXACTLY (e.g., "1 line each" means ONE line, not paragraphs)
@@ -194,7 +194,7 @@ If the answer isn't in the document, say so clearly.`;
     let userPrompt = `Document content:\n${contextForAI}\n\nUser's request: ${query}`;
     
     if (operation === 'continue_summary') {
-      systemPrompt = `You are Maria, a helpful document assistant. The user wants you to CONTINUE a summary that was already started. DO NOT repeat any content from the previous summary. Only add NEW information that comes AFTER what was already covered.`;
+      systemPrompt = `You are Man Friday, a helpful document assistant. The user wants you to CONTINUE a summary that was already started. DO NOT repeat any content from the previous summary. Only add NEW information that comes AFTER what was already covered.`;
       userPrompt = `Previous summary already provided:\n${previousSummary}\n\nFull document:\n${contextForAI}\n\nContinue the summary from where the previous one ended. Do NOT repeat any content already covered. Only provide NEW information.`;
     }
     

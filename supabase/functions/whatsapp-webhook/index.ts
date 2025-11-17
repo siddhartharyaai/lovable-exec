@@ -558,6 +558,57 @@ serve(async (req) => {
     const currentDate = istTime.toISOString().split('T')[0];
     console.log(`[${traceId}] Current IST date/time: ${currentDateTime} (${currentDate})`);
 
+    // Quick check for simple email draft commands BEFORE classification
+    const msgLowerTrimmed = translatedBody.toLowerCase().trim();
+    const simpleEmailCommands = ['send', 'send it', 'cancel', 'discard', 'edit', 'change it'];
+    const isSimpleEmailCommand = simpleEmailCommands.some(cmd => 
+      msgLowerTrimmed === cmd || msgLowerTrimmed.startsWith(cmd + ' ')
+    );
+    
+    if (isSimpleEmailCommand && sessionState?.pending_email_draft_id) {
+      console.log(`[${traceId}] 📧 Simple email command detected with pending draft`);
+      
+      // Determine command type
+      let gmailIntent;
+      if (msgLowerTrimmed.startsWith('send')) {
+        gmailIntent = { type: 'gmail_send_approved', entities: {} };
+      } else if (msgLowerTrimmed.startsWith('cancel') || msgLowerTrimmed.startsWith('discard')) {
+        gmailIntent = { type: 'gmail_cancel_draft', entities: {} };
+      } else if (msgLowerTrimmed.startsWith('edit') || msgLowerTrimmed.startsWith('change')) {
+        gmailIntent = { type: 'gmail_edit_draft', entities: {} };
+      }
+      
+      if (gmailIntent) {
+        // Call Gmail handler directly
+        const gmailResult = await supabase.functions.invoke('handle-gmail', {
+          body: { intent: gmailIntent, userId, traceId }
+        });
+        
+        let emailReply = '';
+        if (gmailResult.error || !gmailResult.data) {
+          console.error(`[${traceId}] Gmail handler error:`, gmailResult.error);
+          emailReply = 'Sorry, I encountered an error processing your email command.';
+        } else {
+          emailReply = gmailResult.data.message;
+        }
+        
+        // Send the reply and exit early
+        await supabase.functions.invoke('send-whatsapp', {
+          body: { userId, message: emailReply, traceId }
+        });
+        
+        // Store conversation
+        await supabase.from('conversation_messages').insert([
+          { user_id: userId, role: 'user', content: messageBody },
+          { user_id: userId, role: 'assistant', content: emailReply }
+        ]);
+        
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Phase 1: Lightweight intent classification
     console.log(`[${traceId}] Classifying intent...`);
     const classificationResult = await supabase.functions.invoke('route-intent', {
@@ -688,8 +739,45 @@ serve(async (req) => {
           last_doc: null,
           last_doc_summary: null,
           contacts_search_results: null,
+          pending_email_draft_id: null,
+          pending_email_draft_type: null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
+
+      } else if (classification.intent_type === 'email_approve' || 
+                 classification.intent_type === 'email_cancel' || 
+                 classification.intent_type === 'email_edit') {
+        // Simple email draft confirmation commands
+        console.log(`[${traceId}] 📧 Email confirmation command: ${classification.intent_type}`);
+        
+        // Parse the intent first to understand what user wants
+        const parseResult = await supabase.functions.invoke('parse-intent', {
+          body: { text: translatedBody, userId, traceId }
+        });
+        
+        const parsedIntent = parseResult.data || { type: classification.intent_type, entities: {} };
+        
+        // Map to Gmail handler intent types
+        let gmailIntent;
+        if (parsedIntent.type === 'email_approve') {
+          gmailIntent = { type: 'gmail_send_approved', entities: {} };
+        } else if (parsedIntent.type === 'email_cancel') {
+          gmailIntent = { type: 'gmail_cancel_draft', entities: {} };
+        } else if (parsedIntent.type === 'email_edit') {
+          gmailIntent = { type: 'gmail_edit_draft', entities: {} };
+        }
+        
+        // Call Gmail handler
+        const gmailResult = await supabase.functions.invoke('handle-gmail', {
+          body: { intent: gmailIntent, userId, traceId }
+        });
+        
+        if (gmailResult.error || !gmailResult.data) {
+          console.error(`[${traceId}] Gmail handler error:`, gmailResult.error);
+          replyText = 'Sorry, I encountered an error processing your email command.';
+        } else {
+          replyText = gmailResult.data.message;
+        }
 
       } else if (classification.intent_type === 'email_action') {
         // User wants to send/draft an email
