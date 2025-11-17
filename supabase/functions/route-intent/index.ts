@@ -40,12 +40,14 @@ YOUR JOB:
 
 POSSIBLE INTENT TYPES:
 - "email_action": ANY message containing email verbs (ABSOLUTE HIGHEST PRIORITY)
-- "confirmation_yes": yes / yup / okay send / do it / go ahead / confirmed / sure / absolutely / please do
+- "confirmation_yes": yes / yup / okay send / do it / go ahead / confirmed / sure / absolutely / please do (NEVER "hi" or "hello")
 - "confirmation_no": no / don't / cancel / stop / never mind / nope / not now
 - "doc_action": user asking to act on last_doc ("summarize this", "clean this up", "extract tasks", "what does this say")
 - "simple_reminder": "remind me to X at Y"
-- "greeting_smalltalk": hi / hello / how are you / thanks / thank you / good morning
+- "greeting_smalltalk": hi / hello / hey / how are you / thanks / thank you / good morning / who are you / what can you do (NEVER treated as confirmation)
 - "handoff_to_orchestrator": anything non-trivial (DEFAULT for most queries)
+
+CRITICAL: Greetings ("hi", "hello", "hey", "who are you") are NEVER confirmations. They are ALWAYS "greeting_smalltalk".
 
 CRITICAL RULE #1 - EMAIL VERBS (ABSOLUTE HIGHEST PRIORITY - OVERRIDES EVERYTHING):
 - If the message contains ANY of these email verbs, classify as "email_action" with confidence 0.98:

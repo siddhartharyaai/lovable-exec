@@ -725,22 +725,30 @@ serve(async (req) => {
         }, { onConflict: 'user_id' });
 
       } else if (classification.intent_type === 'confirmation_no' || 
-                 translatedBody.toLowerCase().match(/\b(cancel|stop|forget|reset|clear|discard|abort|ignore|nevermind|never mind)\b/)) {
+                 translatedBody.toLowerCase().match(/\b(cancel|stop|forget|reset|clear|discard|abort|ignore|nevermind|never mind|start fresh)\b/)) {
         // User cancelled a pending action or wants to reset
         console.log(`[${traceId}] User cancelled or reset conversation`);
         replyText = "Okay, cancelled. What would you like me to help with?";
         
-        // Clear ALL session state to prevent stuck conversations
+        // Clear ALL session state fields to prevent stuck conversations
         await supabase.from('session_state').upsert({
           user_id: userId,
           confirmation_pending: null,
           pending_slots: null,
+          contacts_search_results: null,
+          contacts_search_name: null,
+          contacts_search_timestamp: null,
           current_topic: null,
           last_doc: null,
           last_doc_summary: null,
-          contacts_search_results: null,
           pending_email_draft_id: null,
           pending_email_draft_type: null,
+          last_email_recipient: null,
+          drive_search_results: null,
+          drive_search_timestamp: null,
+          journey_state: null,
+          journey_step: null,
+          recent_actions: null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 
@@ -858,39 +866,36 @@ serve(async (req) => {
         }
 
       } else if (classification.intent_type === 'greeting_smalltalk') {
-        // Simple greeting - check for stale pending state
-        console.log(`[${traceId}] Greeting/smalltalk detected`);
+        // Simple greeting - ALWAYS clear all pending/working state
+        // Greetings should never continue old workflows
+        console.log(`[${traceId}] Greeting/smalltalk detected - clearing ALL session state`);
         
-        // Check if there's stale pending state (older than 5 minutes)
-        const hasStalePendingState = sessionState?.confirmation_pending || 
-                                     sessionState?.pending_slots || 
-                                     sessionState?.contacts_search_results;
+        // Clear ALL session state fields to prevent old intents from being resurrected
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          confirmation_pending: null,
+          pending_slots: null,
+          contacts_search_results: null,
+          contacts_search_name: null,
+          contacts_search_timestamp: null,
+          current_topic: null,
+          pending_email_draft_id: null,
+          pending_email_draft_type: null,
+          last_email_recipient: null,
+          drive_search_results: null,
+          drive_search_timestamp: null,
+          journey_state: null,
+          journey_step: null,
+          recent_actions: null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
         
-        if (hasStalePendingState) {
-          const lastUpdate = sessionState?.updated_at ? new Date(sessionState.updated_at) : new Date(0);
-          const minutesSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60);
-          
-          if (minutesSinceUpdate > 5) {
-            console.log(`[${traceId}] Detected stale pending state (${minutesSinceUpdate.toFixed(1)} min old), clearing it`);
-            
-            // Clear stale state
-            await supabase.from('session_state').upsert({
-              user_id: userId,
-              confirmation_pending: null,
-              pending_slots: null,
-              contacts_search_results: null,
-              current_topic: null,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
-            
-            // Refresh sessionState
-            const freshStateResult = await supabase.from('session_state')
-              .select('*')
-              .eq('user_id', userId)
-              .single();
-            sessionState = freshStateResult.data;
-          }
-        }
+        // Refresh sessionState with clean slate
+        const freshStateResult = await supabase.from('session_state')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+        sessionState = freshStateResult.data;
         
         const agentResult = await supabase.functions.invoke('ai-agent', {
           body: { 
