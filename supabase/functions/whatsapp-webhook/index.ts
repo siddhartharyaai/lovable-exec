@@ -910,7 +910,7 @@ serve(async (req) => {
         });
 
         console.log(`[${traceId}] ✅ Greeting flow complete, got response`);
-        replyText = agentResult.data?.message || "Hi! How can I help you today?";
+        replyText = agentResult.data?.message || "I am Man Friday, your AI executive assistant. I can help you with your calendar, emails, tasks, reminders, and documents, all from WhatsApp. How can I assist you today?";
         
         // Store the updated summary if returned
         if (agentResult.data?.updatedSummary) {
