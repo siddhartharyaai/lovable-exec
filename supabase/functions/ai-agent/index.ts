@@ -1282,7 +1282,7 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
               });
               
               // ENHANCEMENT: Store this as last_email_recipient for "email X again" follow-ups
-              if (draftResult.data?.success && args.to) {
+              if (draftResult.data?.message && args.to) {
                 // Get session to extract contact name from recent lookup
                 const { data: emailSession } = await supabase
                   .from('session_state')
