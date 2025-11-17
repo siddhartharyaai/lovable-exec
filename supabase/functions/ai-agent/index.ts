@@ -1084,6 +1084,16 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                 }
               });
               result = reminderResult.data?.message || 'Reminder created';
+              
+              // Clear session state after successful reminder creation
+              await supabase.from('session_state').upsert({
+                user_id: userId,
+                pending_slots: null,
+                current_topic: null,
+                confirmation_pending: null,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+              console.log(`[${traceId}] Cleared session state after reminder creation`);
               break;
 
             case 'snooze_reminder':
@@ -1332,6 +1342,16 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                 }
               });
               result = createTaskResult.data?.message || 'Task created';
+              
+              // Clear session state after successful task creation
+              await supabase.from('session_state').upsert({
+                user_id: userId,
+                pending_slots: null,
+                current_topic: null,
+                confirmation_pending: null,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+              console.log(`[${traceId}] Cleared session state after task creation`);
               break;
 
             case 'complete_task':
