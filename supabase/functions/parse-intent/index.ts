@@ -24,8 +24,9 @@ SUPPORTED INTENTS:
 - gmail_reply: Reply to an email (requires: messageId, body - will show draft for approval)
 - web_search: Search the web (entities: query, type: "general" for news/weather or "specific" for detailed info)
 - contact_lookup: Find contact information (entities: name or email)
-- email_approve: Approve email draft (entities: draftId)
-- email_cancel: Cancel email draft (entities: draftId)
+- email_approve: Approve email draft (no entities needed - uses active draft from session)
+- email_cancel: Cancel email draft (no entities needed - uses active draft from session)
+- email_edit: Edit email draft (no entities needed - uses active draft from session)
 - fallback: General conversation/knowledge queries
 
 ENTITY NORMALIZATION:
@@ -152,11 +153,20 @@ User: "What's Priya's phone number?"
 Response: {"type":"contact_lookup","entities":{"name":"Priya"},"confidence":0.95}
 
 EMAIL APPROVAL:
-User: "send abc12345"
-Response: {"type":"email_approve","entities":{"draftId":"abc12345"},"confidence":0.95}
+User: "Send"
+Response: {"type":"email_approve","entities":{},"confidence":0.95}
 
-User: "cancel def67890"
-Response: {"type":"email_cancel","entities":{"draftId":"def67890"},"confidence":0.95}
+User: "send it"
+Response: {"type":"email_approve","entities":{},"confidence":0.95}
+
+User: "Cancel"
+Response: {"type":"email_cancel","entities":{},"confidence":0.95}
+
+User: "don't send"
+Response: {"type":"email_cancel","entities":{},"confidence":0.95}
+
+User: "Edit"
+Response: {"type":"email_edit","entities":{},"confidence":0.95}
 
 FALLBACK:
 User: "How are you?"
