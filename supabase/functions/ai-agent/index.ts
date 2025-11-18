@@ -969,6 +969,34 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
   return isEmail && hasNoActiveEmail;
 }
 
+// Helper to extract rough email subject/body from common patterns like
+// "Email X and ask him to do Y" so we can populate pending_slots BEFORE lookup_contact
+function extractEmailSlotsFromMessage(message: string, userName: string): { subject: string; body: string } | null {
+  const trimmed = message.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (!lower.includes('email')) return null;
+
+  // Look for phrases like "ask him to", "ask her to", "ask them to"
+  const askMatch = lower.match(/ask\s+(him|her|them|him to|her to|them to)?\s*to\s+(.+)$/i);
+  const tellMatch = lower.match(/tell\s+(him|her|them)?\s+(.+)$/i);
+  const sayMatch = lower.match(/say\s+(.+)$/i);
+
+  let bodyInstruction: string | null = null;
+  if (askMatch && askMatch[2]) bodyInstruction = askMatch[2];
+  else if (tellMatch && tellMatch[2]) bodyInstruction = tellMatch[2];
+  else if (sayMatch && sayMatch[1]) bodyInstruction = sayMatch[1];
+
+  if (!bodyInstruction) return null;
+
+  const capitalizedBody = bodyInstruction.charAt(0).toUpperCase() + bodyInstruction.slice(1);
+
+  const body = `Hi,\n\n${capitalizedBody}.\n\nBest regards,\n${userName}`;
+  const subject = `Quick note about ${bodyInstruction.split(' ').slice(0, 4).join(' ')}`;
+
+  return { subject, body };
+}
+
     let aiMessage: any;
 
     // If forcedIntent is provided (from confirmation), skip AI and execute directly
@@ -1562,18 +1590,26 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
                   }
                 });
                 
+                const contacts = contactResult.data?.contacts || [];
+
                 // Store ALL contact results in session_state for follow-up questions
-                if (contactResult.data?.contacts && contactResult.data.contacts.length > 0) {
+                if (contacts.length > 0) {
                   await supabase.from('session_state').upsert({
                     user_id: userId,
-                    contacts_search_results: contactResult.data.contacts,
+                    contacts_search_results: contacts,
                     contacts_search_name: searchName,
                     contacts_search_timestamp: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                   }, { onConflict: 'user_id' });
                   
-                  const contact = contactResult.data.contacts[0];
-                  result = contactResult.data.message || `Found contact: ${contact.name}${contact.emails?.[0] ? ` (${contact.emails[0]})` : ''}`;
+                  if (contacts.length === 1) {
+                    const single = contacts[0];
+                    // TOOL-LEVEL GUARANTEE: for a single match, ALWAYS return this exact format
+                    result = `Found contact: ${single.name}${single.emails?.[0] ? ` (${single.emails[0]})` : ''}`;
+                  } else {
+                    // Multiple matches: allow richer message so AI can ask user to choose
+                    result = contactResult.data?.message || `Found ${contacts.length} contacts for "${args.name}"`;
+                  }
                 } else {
                   result = contactResult.data?.message || 'No contact found';
                 }
