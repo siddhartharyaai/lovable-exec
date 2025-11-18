@@ -613,13 +613,15 @@ CONTACT RESOLUTION (CRITICAL - PEOPLE FIRST PATTERN):
 EMAIL WORKFLOW (2-STEP REQUIRED):
 - For "Email [name] about [topic]" requests:
   Step 1: Call lookup_contact to resolve the name
-  Step 2: After contact is found:
-    a) If you have subject & body from original message → call create_email_draft immediately
-    b) If missing subject or body → SET pending_slots and ask for ONE clarifying question
+  Step 2: When lookup_contact returns:
+    - If result format is "Found contact: Name (email)" → This is a SINGLE RESOLVED CONTACT
+      → IMMEDIATELY call create_email_draft with that email (if you have subject & body)
+      → OR SET pending_slots and ask ONE clarifying question (if missing subject/body)
+      → DO NOT ask for user confirmation - the contact is already resolved
+    - If result shows multiple contacts (numbered list) → User must choose, then call create_email_draft
   Step 3: After draft is created → PASS THROUGH the tool response EXACTLY as-is, DO NOT ADD ANY EXTRA TEXT
-- CRITICAL: After lookup_contact succeeds, you MUST either:
-  1. Call create_email_draft immediately (if you have all info), OR
-  2. SET pending_slots = {intent: "compose_email", collected: {to: "email", name: "name", body: "..."}, required_slots: ["subject" or "time" etc]} and ask ONE question
+- CRITICAL: "Found contact: Name (email)" means RESOLVED - proceed immediately to create_email_draft
+- NEVER ask "Should I use this contact?" when you receive "Found contact: Name (email)"
 - WHEN CLARIFICATION RESPONSE RECEIVED: If pending_slots exists with "compose_email", user's message fills a slot → call create_email_draft immediately with all collected data
 - NEVER just say "Got it! I've completed: lookup_contact" - always follow through
 - NEVER add your own text after tool responses, especially for email drafts - pass them through verbatim
