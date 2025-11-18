@@ -615,11 +615,14 @@ EMAIL WORKFLOW (2-STEP REQUIRED):
   Step 1: Call lookup_contact to resolve the name
   Step 2: After contact is found:
     a) If you have subject & body from original message → call create_email_draft immediately
-    b) If missing subject or body → ask for the missing info (ONE question only)
-  Step 3: After draft is created → show draft and ask for confirmation
-- CRITICAL: After lookup_contact succeeds, you MUST either call create_email_draft or ask ONE clarifying question
-- NEVER just say "Got it! I've completed: lookup_contact" - always follow through with the email draft
-- Store collected info in pending_slots so follow-up messages can fill gaps without re-running lookup_contact
+    b) If missing subject or body → SET pending_slots and ask for ONE clarifying question
+  Step 3: After draft is created → PASS THROUGH the tool response EXACTLY as-is, DO NOT ADD ANY EXTRA TEXT
+- CRITICAL: After lookup_contact succeeds, you MUST either:
+  1. Call create_email_draft immediately (if you have all info), OR
+  2. SET pending_slots = {intent: "compose_email", collected: {to: "email", name: "name", body: "..."}, required_slots: ["subject" or "time" etc]} and ask ONE question
+- WHEN CLARIFICATION RESPONSE RECEIVED: If pending_slots exists with "compose_email", user's message fills a slot → call create_email_draft immediately with all collected data
+- NEVER just say "Got it! I've completed: lookup_contact" - always follow through
+- NEVER add your own text after tool responses, especially for email drafts - pass them through verbatim
 
 SLOT-FILLING (FOR EMAIL/CALENDAR):
 - When collecting email subject/body or calendar details:
@@ -654,8 +657,11 @@ ${prefsText}
 
 OUTPUT:
 - Use tools when needed (call them via function calls)
-- Return natural-language assistant reply
+- When returning tool responses (especially email drafts), pass them through EXACTLY as the tool returned them
+- NEVER add custom footer text like "Would you like me to send it?" - the tools already include proper instructions
+- Return natural-language assistant reply ONLY when tools don't already provide formatted output
 - Update session_state appropriately (set/clear confirmation_pending, update pending_slots, update current_topic)
+- CRITICAL: When you ask a clarification question for email/calendar, ALWAYS set pending_slots first
 
 ERROR & SAFETY:
 - If tool fails: Don't expose raw errors. Retry once or explain what couldn't be done.
@@ -1505,7 +1511,8 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
               
               if (shouldReuseLastRecipient) {
                 console.log(`[${traceId}] ✅ Reusing last email recipient: ${lastRecipient.name} (${lastRecipient.email})`);
-                result = `Using ${lastRecipient.name} (${lastRecipient.email})`;
+                // Return contact info in same format as successful lookup so AI can proceed with draft
+                result = `Found contact: ${lastRecipient.name} (${lastRecipient.email})`;
                 break;
               }
               
