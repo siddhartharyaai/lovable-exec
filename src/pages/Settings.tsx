@@ -18,8 +18,10 @@ const Settings = () => {
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(true);
   const [phoneNumber, setPhoneNumber] = useState("+919821230311");
   const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
   const [city, setCity] = useState("Mumbai");
   const [isSavingCity, setIsSavingCity] = useState(false);
+  const [isSavingName, setIsSavingName] = useState(false);
 
   useEffect(() => {
     checkGoogleConnection();
@@ -59,7 +61,7 @@ const Settings = () => {
       // Check if this specific phone number has Google connected
       const { data: userData } = await supabase
         .from('users')
-        .select('id, email, city')
+        .select('id, email, name, city')
         .eq('phone', phoneNumber)
         .maybeSingle();
       
@@ -71,6 +73,9 @@ const Settings = () => {
 
       if (userData.email) {
         setUserEmail(userData.email);
+      }
+      if (userData.name) {
+        setUserName(userData.name);
       }
       if (userData.city) {
         setCity(userData.city);
@@ -235,6 +240,44 @@ const Settings = () => {
     }
   };
 
+  const handleSaveName = async () => {
+    if (!phoneNumber || !userName) return;
+
+    setIsSavingName(true);
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone', phoneNumber)
+        .maybeSingle();
+      
+      if (!userData) {
+        throw new Error('User not found. Please enter your WhatsApp phone number.');
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({ name: userName })
+        .eq('id', userData.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Name Updated",
+        description: `Your name has been set to ${userName} for email signatures`,
+      });
+    } catch (error) {
+      console.error('Error saving name:', error);
+      toast({
+        title: "Failed to save name",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <div className="container max-w-4xl mx-auto px-4 py-12">
@@ -393,6 +436,37 @@ const Settings = () => {
                 checked={birthdayReminders}
                 onCheckedChange={setBirthdayReminders}
               />
+            </div>
+
+            {/* Your Name Setting */}
+            <div className="pt-4 border-t">
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="user-name" className="text-base font-semibold">
+                    Your Name
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Used in email signatures and personalization
+                  </p>
+                </div>
+                <div className="flex gap-3 max-w-md">
+                  <Input
+                    id="user-name"
+                    type="text"
+                    placeholder="Your full name"
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleSaveName} 
+                    disabled={isSavingName || !phoneNumber || !userName}
+                    size="default"
+                  >
+                    {isSavingName ? 'Saving...' : 'Save Name'}
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {/* City Setting */}

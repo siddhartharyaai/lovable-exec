@@ -628,6 +628,7 @@ export type Database = {
           daily_briefing_enabled: boolean
           email: string | null
           id: string
+          name: string | null
           phone: string
           primary_task_list_id: string | null
           tz: string
@@ -640,6 +641,7 @@ export type Database = {
           daily_briefing_enabled?: boolean
           email?: string | null
           id?: string
+          name?: string | null
           phone: string
           primary_task_list_id?: string | null
           tz?: string
@@ -652,6 +654,7 @@ export type Database = {
           daily_briefing_enabled?: boolean
           email?: string | null
           id?: string
+          name?: string | null
           phone?: string
           primary_task_list_id?: string | null
           tz?: string
