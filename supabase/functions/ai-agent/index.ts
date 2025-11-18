@@ -504,7 +504,7 @@ Body: "Got it, thanks."
   }
 ];
 
-async function buildSystemPrompt(supabase: any, userId: string): Promise<string> {
+async function buildSystemPrompt(supabase: any, userId: string, userName: string): Promise<string> {
   // Load learned patterns (compact - top 3 only)
   const { data: patterns } = await supabase
     .from('learned_patterns')
@@ -554,6 +554,7 @@ async function buildSystemPrompt(supabase: any, userId: string): Promise<string>
 ENVIRONMENT:
 - Users talk on WhatsApp (voice notes, casual language, partial sentences)
 - Timezone: Asia/Kolkata (IST) - Current: ${currentDateReadable}, ${currentTimeReadable}
+- User's name: ${userName} (use this name in email signatures instead of "[Your Name]" or generic placeholders)
 - You receive: user_message, history, session_state, last_doc
 
 YOUR JOB:
@@ -828,8 +829,17 @@ serve(async (req) => {
       }
     }
 
+      // Fetch user's name for email signatures
+    const { data: userData } = await supabase
+      .from('users')
+      .select('name')
+      .eq('id', userId)
+      .maybeSingle();
+    
+    const userName = userData?.name || 'Siddharth Arya'; // fallback
+    
     // Build dynamic system prompt with learned patterns
-    const systemPrompt = await buildSystemPrompt(supabase, userId);
+    const systemPrompt = await buildSystemPrompt(supabase, userId, userName);
 
     // Get session state for additional context (if not already provided)
     let sessionData = finalSessionState;
@@ -1708,6 +1718,79 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
           });
         }
       }
+
+      // ============= DETERMINISTIC ENFORCEMENT: AUTO-DRAFT ON SINGLE CONTACT =============
+      // Check if lookup_contact returned a single resolved contact, then immediately create draft
+      const lookupTool = toolResults.find(tr => tr.name === 'lookup_contact');
+      if (lookupTool && lookupTool.content) {
+        const lookupResult = lookupTool.content;
+        // Pattern: "Found contact: Name (email@example.com)"
+        const singleContactMatch = lookupResult.match(/^Found contact:\s*(.+?)\s*\(([^)]+@[^)]+)\)\s*$/i);
+        
+        if (singleContactMatch) {
+          const contactName = singleContactMatch[1].trim();
+          const contactEmail = singleContactMatch[2].trim();
+          
+          console.log(`[${traceId}] 🔒 DETERMINISTIC ENFORCEMENT: Single contact found: ${contactName} (${contactEmail})`);
+          
+          // Check if we have pending_slots with email intent
+          const { data: draftSession } = await supabase
+            .from('session_state')
+            .select('pending_slots')
+            .eq('user_id', userId)
+            .single();
+          
+          const slots = draftSession?.pending_slots;
+          const hasEmailSlots = slots && slots.intent === 'compose_email';
+          
+          // Extract subject and body from slots or derive from message
+          let subject = slots?.collected?.subject || '';
+          let body = slots?.collected?.body || '';
+          
+          // If we have both subject and body from slots, create draft immediately
+          if (hasEmailSlots && subject && body) {
+            console.log(`[${traceId}] 📧 Auto-creating draft with collected slots: subject="${subject}", body="${body}"`);
+            
+            // Call create_email_draft directly
+            const autoDraftResult = await supabase.functions.invoke('handle-gmail', {
+              body: { 
+                intent: { 
+                  type: 'gmail_send',
+                  entities: {
+                    to: contactEmail,
+                    subject: subject,
+                    body: body
+                  } 
+                }, 
+                userId, 
+                traceId 
+              }
+            });
+            
+            // Store last_email_recipient
+            await supabase.from('session_state').upsert({
+              user_id: userId,
+              last_email_recipient: {
+                name: contactName,
+                email: contactEmail
+              },
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+            
+            console.log(`[${traceId}] 💾 Auto-stored last_email_recipient: ${contactName} (${contactEmail})`);
+            
+            // Return draft directly, bypassing second AI call
+            const draftMessage = autoDraftResult.data?.message || 'Email draft created';
+            return new Response(JSON.stringify({ 
+              message: draftMessage,
+              toolsUsed: ['lookup_contact', 'create_email_draft']
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
+      // ============= END DETERMINISTIC ENFORCEMENT =============
 
       // Second AI call - let it formulate a natural response based on tool results
       const finalMessages = [
