@@ -611,37 +611,43 @@ CONTACT RESOLUTION (CRITICAL - PEOPLE FIRST PATTERN):
 - NEVER ask user for email before checking contacts
 - If lookup_contact returns an email, use it immediately for the next step (draft/send)
 
-EMAIL WORKFLOW (2-STEP REQUIRED):
+EMAIL WORKFLOW (CRITICAL - SINGLE-CONTACT AUTO-DRAFT):
 - For "Email [name] about [topic]" requests:
   Step 1: Call lookup_contact to resolve the name
-  Step 2: When lookup_contact returns:
-    - If result format is "Found contact: Name (email)" → This is a SINGLE RESOLVED CONTACT
-      → IMMEDIATELY call create_email_draft with that email (if you have subject & body)
-      → OR SET pending_slots and ask ONE clarifying question (if missing subject/body)
-      → DO NOT ask for user confirmation - the contact is already resolved
-    - If result shows multiple contacts (numbered list) → User must choose, then call create_email_draft
-  Step 3: After draft is created → PASS THROUGH the tool response EXACTLY as-is, DO NOT ADD ANY EXTRA TEXT
-- CRITICAL: "Found contact: Name (email)" means RESOLVED - proceed immediately to create_email_draft
-- NEVER ask "Should I use this contact?" when you receive "Found contact: Name (email)"
-- WHEN CLARIFICATION RESPONSE RECEIVED: If pending_slots exists with "compose_email", user's message fills a slot → call create_email_draft immediately with all collected data
-- NEVER just say "Got it! I've completed: lookup_contact" - always follow through
-- NEVER add your own text after tool responses, especially for email drafts - pass them through verbatim
+  Step 2: When lookup_contact returns "Found contact: Name (email)" → This is a SINGLE RESOLVED CONTACT:
+    → The contact is FINAL and RESOLVED
+    → IMMEDIATELY call create_email_draft with that email (if you have subject & body from user's message)
+    → DO NOT ask "Should I use this contact?" or "Ok?" or any confirmation
+    → DO NOT say "I found the contact" and wait - proceed directly to draft creation
+    → If missing subject/body, set pending_slots and ask ONE clarifying question ONLY
+  Step 3: If lookup_contact shows multiple contacts (numbered list) → User must choose, then call create_email_draft
+  Step 4: After draft is created → PASS THROUGH the tool response EXACTLY as-is
+- CRITICAL RULES:
+  - "Found contact: Name (email)" = RESOLVED AND FINAL → No confirmation needed
+  - Single contact result → Immediate action (draft creation if slots complete)
+  - NEVER ask "Should I email him?" after single-contact result
+  - NEVER add extra text after email draft tool output
+  - When composing email body, ALWAYS end with signature: "Best regards,\n${userName}" (use the actual user name, never use "[Your Name]" or "Man Friday")
+- SLOT-FILLING: If pending_slots exists with "compose_email", user's next message fills the missing slot → immediately call create_email_draft
 
 SLOT-FILLING (FOR EMAIL/CALENDAR):
-- When collecting email subject/body or calendar details:
-  1. Set current_topic (e.g., "email_rohan", "meeting_nikhil")
-  2. Set pending_slots with intent and collected data
-  3. On next user message, check if pending_slots exists
-  4. If yes, treat message as filling a slot (e.g., "Deck sent" = subject line)
-  5. DO NOT re-run lookup_contact if you already have the email in pending_slots.collected
-- Example: 
+- When user requests email composition (e.g., "Email X and ask/tell/say..."):
+  1. Extract ALL available info immediately: recipient name, subject (if mentioned), body (from "ask/tell/say" part)
+  2. Set pending_slots = {intent: "compose_email", collected: {subject: "...", body: "..."}, required_slots: [...missing fields...]}
+  3. Call lookup_contact to resolve recipient
+  4. If lookup returns single contact → deterministic enforcement will auto-draft (if subject+body present)
+  5. If missing subject or body → ask ONE clarifying question, user's next message fills that slot
+- CRITICAL: Extract body immediately from phrases like "ask him to X", "tell her about Y", "say that Z"
+  - "ask him to meet me tomorrow" → body: "Could we meet tomorrow? Looking forward to it."
+  - "tell her about the deck" → body: "Wanted to tell you about the deck we discussed."
+  - "say thanks for dinner" → body: "Thank you so much for dinner! It was wonderful."
+- Example flow: 
   User: "Email Rohan and ask if he got the deck"
-  You: Call lookup_contact → found rohan@bwships.com
-  You: Set pending_slots = {intent: "compose_email", collected: {to: "rohan@bwships.com", body: "..."}, required_slots: ["subject"]}
-  You: Reply "What should the subject line be?"
-  User: "Deck sent"
-  You: Use pending_slots.collected.to and new subject to call create_email_draft
-  You: Clear pending_slots after draft is created
+  You: Extract body="Did you receive the deck I sent?" → Set pending_slots with this body
+  You: Call lookup_contact(name="Rohan") → returns "Found contact: Rohan Damani (rohan@bwships.com)"
+  You: Deterministic enforcement auto-creates draft (because subject+body are in pending_slots)
+- DO NOT wait to extract body until after contact is resolved - extract it IMMEDIATELY from user's message
+- DO NOT re-run lookup_contact if you already have the email in pending_slots.collected
 
 NATURAL LANGUAGE & UX:
 - Users speak messily. Infer intent while staying safe.
@@ -1720,73 +1726,73 @@ function isNewEmailRequest(message: string, currentTopic: string | null): boolea
       }
 
       // ============= DETERMINISTIC ENFORCEMENT: AUTO-DRAFT ON SINGLE CONTACT =============
-      // Check if lookup_contact returned a single resolved contact, then immediately create draft
+      // When lookup_contact returns a single resolved contact, immediately create draft if we have subject/body
       const lookupTool = toolResults.find(tr => tr.name === 'lookup_contact');
-      if (lookupTool && lookupTool.content) {
+      if (lookupTool?.content) {
         const lookupResult = lookupTool.content;
-        // Pattern: "Found contact: Name (email@example.com)"
-        const singleContactMatch = lookupResult.match(/^Found contact:\s*(.+?)\s*\(([^)]+@[^)]+)\)\s*$/i);
+        // Match: "Found contact: Name (email@example.com)"
+        const match = lookupResult.match(/^Found contact:\s*(.+?)\s*\(([^)]+@[^)]+)\)\s*$/i);
         
-        if (singleContactMatch) {
-          const contactName = singleContactMatch[1].trim();
-          const contactEmail = singleContactMatch[2].trim();
+        if (match) {
+          const contactName = match[1].trim();
+          const contactEmail = match[2].trim();
           
-          console.log(`[${traceId}] 🔒 DETERMINISTIC ENFORCEMENT: Single contact found: ${contactName} (${contactEmail})`);
+          console.log(`[${traceId}] 🔒 DETERMINISTIC ENFORCEMENT: Single contact resolved: ${contactName} <${contactEmail}>`);
           
-          // Check if we have pending_slots with email intent
-          const { data: draftSession } = await supabase
+          // Fetch session state to check for pending_slots
+          const { data: session } = await supabase
             .from('session_state')
             .select('pending_slots')
             .eq('user_id', userId)
             .single();
           
-          const slots = draftSession?.pending_slots;
-          const hasEmailSlots = slots && slots.intent === 'compose_email';
+          const slots = session?.pending_slots;
           
-          // Extract subject and body from slots or derive from message
-          let subject = slots?.collected?.subject || '';
-          let body = slots?.collected?.body || '';
-          
-          // If we have both subject and body from slots, create draft immediately
-          if (hasEmailSlots && subject && body) {
-            console.log(`[${traceId}] 📧 Auto-creating draft with collected slots: subject="${subject}", body="${body}"`);
+          // Check if we have email intent with subject and body
+          if (slots?.intent === 'compose_email') {
+            const subject = slots.collected?.subject;
+            const body = slots.collected?.body;
             
-            // Call create_email_draft directly
-            const autoDraftResult = await supabase.functions.invoke('handle-gmail', {
-              body: { 
-                intent: { 
-                  type: 'gmail_send',
-                  entities: {
-                    to: contactEmail,
-                    subject: subject,
-                    body: body
-                  } 
-                }, 
-                userId, 
-                traceId 
-              }
-            });
-            
-            // Store last_email_recipient
-            await supabase.from('session_state').upsert({
-              user_id: userId,
-              last_email_recipient: {
-                name: contactName,
-                email: contactEmail
-              },
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
-            
-            console.log(`[${traceId}] 💾 Auto-stored last_email_recipient: ${contactName} (${contactEmail})`);
-            
-            // Return draft directly, bypassing second AI call
-            const draftMessage = autoDraftResult.data?.message || 'Email draft created';
-            return new Response(JSON.stringify({ 
-              message: draftMessage,
-              toolsUsed: ['lookup_contact', 'create_email_draft']
-            }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            if (subject && body) {
+              console.log(`[${traceId}] 📧 Auto-creating draft (deterministic enforcement)`);
+              console.log(`[${traceId}]    To: ${contactEmail}`);
+              console.log(`[${traceId}]    Subject: ${subject}`);
+              console.log(`[${traceId}]    Body: ${body.substring(0, 50)}...`);
+              
+              // Call handle-gmail directly to create draft
+              const draftResp = await supabase.functions.invoke('handle-gmail', {
+                body: {
+                  intent: {
+                    type: 'gmail_send',
+                    entities: { to: contactEmail, subject, body }
+                  },
+                  userId,
+                  traceId
+                }
+              });
+              
+              // Store last_email_recipient for "email again" flows
+              await supabase.from('session_state').upsert({
+                user_id: userId,
+                last_email_recipient: { name: contactName, email: contactEmail },
+                pending_slots: null, // Clear pending slots after successful draft
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+              
+              console.log(`[${traceId}] 💾 Stored last_email_recipient: ${contactName} (${contactEmail})`);
+              
+              // Return draft immediately, bypassing second AI call
+              return new Response(JSON.stringify({
+                message: draftResp.data?.message || 'Email draft created',
+                toolsUsed: ['lookup_contact', 'create_email_draft']
+              }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
+            } else {
+              console.log(`[${traceId}] ⚠️ Single contact found but missing slots - subject: ${!!subject}, body: ${!!body}`);
+              console.log(`[${traceId}] 📝 Will let AI ask for missing information`);
+            }
+          } else {
+            console.log(`[${traceId}] ⚠️ Single contact found but no compose_email intent in pending_slots`);
+            console.log(`[${traceId}] 📝 Will let AI handle this case`);
           }
         }
       }
