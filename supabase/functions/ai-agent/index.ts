@@ -927,6 +927,38 @@ serve(async (req) => {
 - If they selected one by number/name, use that contact's first email for the email draft
 - DO NOT call lookup_contact again - use the stored results`;
     }
+
+    // ============= FIX 1: PRE-POPULATE EMAIL SLOTS BEFORE AI CALL =============
+    // For messages like "Email X and ask him to do Y", extract subject/body BEFORE lookup_contact
+    if (!isSlotFilling && !isContactFollowup && !forcedIntent && !routedIntent) {
+      const extracted = extractEmailSlotsFromMessage(finalMessage, userName);
+      if (extracted) {
+        console.log(`[${traceId}] ✉️ Auto-extracted email slots before lookup_contact:`, extracted);
+        
+        // Store in session_state immediately
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          pending_slots: {
+            intent: 'compose_email',
+            collected: {
+              subject: extracted.subject,
+              body: extracted.body
+            },
+            required_slots: [] // All slots filled
+          },
+          current_topic: `email_draft_${Date.now()}`,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        
+        // Update local session data for context
+        sessionData.pending_slots = {
+          intent: 'compose_email',
+          collected: { subject: extracted.subject, body: extracted.body },
+          required_slots: []
+        };
+        sessionData.current_topic = `email_draft_${Date.now()}`;
+      }
+    }
     
     // Add document context if available
     if (lastDoc) {
@@ -1611,7 +1643,13 @@ function extractEmailSlotsFromMessage(message: string, userName: string): { subj
                     result = contactResult.data?.message || `Found ${contacts.length} contacts for "${args.name}"`;
                   }
                 } else {
-                  result = contactResult.data?.message || 'No contact found';
+                  // FIX 4: If lookup fails but we have lastRecipient with matching name, use it
+                  if (lastRecipient && searchName && lastRecipientName === searchName) {
+                    console.log(`[${traceId}] 🔧 Contact lookup failed but lastRecipient matches "${searchName}" → reusing`);
+                    result = `Found contact: ${lastRecipient.name} (${lastRecipient.email})`;
+                  } else {
+                    result = contactResult.data?.message || 'No contact found';
+                  }
                 }
               }
               break;
