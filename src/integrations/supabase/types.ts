@@ -64,6 +64,41 @@ export type Database = {
           },
         ]
       }
+      calendar_notifications: {
+        Row: {
+          created_at: string
+          event_id: string
+          event_start_time: string
+          id: string
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          event_start_time: string
+          id?: string
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          event_start_time?: string
+          id?: string
+          sent_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_messages: {
         Row: {
           content: string

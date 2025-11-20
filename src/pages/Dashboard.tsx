@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Settings, Shield, MessageSquare, TrendingUp, Clock, CheckCircle } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Settings, Shield, MessageSquare, TrendingUp, Clock, CheckCircle, Lightbulb, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,10 +46,18 @@ const Dashboard = () => {
   const [upcomingReminders, setUpcomingReminders] = useState<Reminder[]>([]);
   const [recentActivities, setRecentActivities] = useState<ActivityLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  
+  // Usage insights state
+  const [weeklyStats, setWeeklyStats] = useState({
+    messagesCount: 0,
+    remindersCount: 0,
+    emailDraftsCount: 0
+  });
 
   useEffect(() => {
     checkConnections();
     fetchDashboardData();
+    fetchWeeklyStats();
   }, []);
 
   const checkConnections = async () => {
@@ -110,6 +119,40 @@ const Dashboard = () => {
       toast.error('Failed to load dashboard data');
     } finally {
       setIsLoadingData(false);
+    }
+  };
+
+  const fetchWeeklyStats = async () => {
+    try {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const isoDate = sevenDaysAgo.toISOString();
+
+      // Count messages from last 7 days
+      const { count: messagesCount } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', isoDate);
+
+      // Count reminders from last 7 days
+      const { count: remindersCount } = await supabase
+        .from('reminders')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', isoDate);
+
+      // Count email drafts from last 7 days
+      const { count: emailDraftsCount } = await supabase
+        .from('email_drafts')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', isoDate);
+
+      setWeeklyStats({
+        messagesCount: messagesCount || 0,
+        remindersCount: remindersCount || 0,
+        emailDraftsCount: emailDraftsCount || 0
+      });
+    } catch (err) {
+      console.error('Error fetching weekly stats:', err);
     }
   };
 
@@ -189,6 +232,61 @@ const Dashboard = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-2 space-y-6">
+            {/* Getting Started Panel */}
+            <FadeInView delay={0.2}>
+              <Card className="p-6 border-primary/20 bg-gradient-to-br from-primary/5 to-accent/5">
+                <div className="flex items-start gap-3 mb-4">
+                  <Lightbulb className="w-6 h-6 text-primary mt-1" />
+                  <div>
+                    <h3 className="text-xl font-bold mb-2">Getting Started with Man Friday</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Try these example commands via WhatsApp to see what Man Friday can do:
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {[
+                    "What's on my calendar today?",
+                    "Email my lawyer and ask for an update on the contract",
+                    "Remind me at 5 pm to call my investor",
+                    "Summarize the PDF I just uploaded in 5 bullet points",
+                    "What are my pending tasks?"
+                  ].map((prompt, i) => (
+                    <div
+                      key={i}
+                      className="text-sm p-3 bg-background/60 rounded-lg border border-border/50 hover:border-primary/40 transition-colors"
+                    >
+                      <span className="text-muted-foreground">"{prompt}"</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </FadeInView>
+
+            {/* Usage Insights */}
+            <FadeInView delay={0.3}>
+              <Card className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <BarChart3 className="w-5 h-5 text-primary" />
+                  <h3 className="text-xl font-bold">Activity This Week</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-primary/5 rounded-lg">
+                    <div className="text-3xl font-bold text-primary mb-1">{weeklyStats.messagesCount}</div>
+                    <div className="text-xs text-muted-foreground">Messages</div>
+                  </div>
+                  <div className="text-center p-4 bg-accent/5 rounded-lg">
+                    <div className="text-3xl font-bold text-accent mb-1">{weeklyStats.remindersCount}</div>
+                    <div className="text-xs text-muted-foreground">Reminders</div>
+                  </div>
+                  <div className="text-center p-4 bg-success/5 rounded-lg">
+                    <div className="text-3xl font-bold text-success mb-1">{weeklyStats.emailDraftsCount}</div>
+                    <div className="text-xs text-muted-foreground">Email Drafts</div>
+                  </div>
+                </div>
+              </Card>
+            </FadeInView>
+            
             <EnhancedMessagesCard
               messages={recentMessages}
               isLoading={isLoadingData}
