@@ -39,6 +39,8 @@ serve(async (req) => {
 
     for (const reminder of reminders || []) {
       try {
+        console.log(`[${traceId}] Reminder picked up: id=${reminder.id}, user=${reminder.user_id}, due_at=${reminder.due_ts}`);
+        
         const message = `⏰ **Reminder**\n\n${reminder.text}`;
         
         const { error: sendError } = await supabase.functions.invoke('send-whatsapp', {
@@ -59,6 +61,8 @@ serve(async (req) => {
           
           failed++;
         } else {
+          console.log(`[${traceId}] Reminder SENT once for reminder_id=${reminder.id}, user=${reminder.user_id}`);
+          
           // Update status to sent
           await supabase
             .from('reminders')
@@ -130,6 +134,23 @@ serve(async (req) => {
               
               // Only send if it's close to 15 minutes
               if (timeUntilEvent >= 14 && timeUntilEvent <= 16) {
+                const eventId = event.id;
+                const eventStartTime = eventStart.toISOString();
+                
+                // Check if we've already sent a notification for this event
+                const { data: existingNotification } = await supabase
+                  .from('calendar_notifications')
+                  .select('id')
+                  .eq('user_id', tokenData.user_id)
+                  .eq('event_id', eventId)
+                  .eq('event_start_time', eventStartTime)
+                  .maybeSingle();
+                
+                if (existingNotification) {
+                  console.log(`[${traceId}] Calendar notification SKIPPED (already sent) for event_id=${eventId}, user=${tokenData.user_id}`);
+                  continue;
+                }
+                
                 const eventTime = eventStart.toLocaleString('en-IN', {
                   timeZone: 'Asia/Kolkata',
                   hour: 'numeric',
@@ -139,11 +160,24 @@ serve(async (req) => {
                 
                 const message = `📅 **Upcoming Event in 15 minutes!**\n\n*${event.summary}*\n${eventTime} IST${event.location ? `\n📍 ${event.location}` : ''}`;
                 
-                await supabase.functions.invoke('send-whatsapp', {
+                const { error: sendError } = await supabase.functions.invoke('send-whatsapp', {
                   body: { userId: tokenData.user_id, message, traceId }
                 });
                 
-                console.log(`[${traceId}] Sent pre-event notification for: ${event.summary}`);
+                if (!sendError) {
+                  // Record that we sent this notification
+                  await supabase
+                    .from('calendar_notifications')
+                    .insert({
+                      user_id: tokenData.user_id,
+                      event_id: eventId,
+                      event_start_time: eventStartTime
+                    });
+                  
+                  console.log(`[${traceId}] Calendar notification SENT once for event_id=${eventId}, user=${tokenData.user_id}, event="${event.summary}"`);
+                } else {
+                  console.error(`[${traceId}] Failed to send calendar notification for event ${eventId}:`, sendError);
+                }
               }
             }
           }

@@ -143,9 +143,9 @@ serve(async (req) => {
           }
         }
 
-        // Count unread emails
+        // Fetch LIVE unread email count and top subjects
         const gmailResponse = await fetch(
-          'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+category:primary&maxResults=1',
+          'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread&maxResults=10',
           {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           }
@@ -153,7 +153,36 @@ serve(async (req) => {
 
         if (gmailResponse.ok) {
           const gmailData = await gmailResponse.json();
-          briefingData.emails = gmailData.resultSizeEstimate || 0;
+          const unreadCount = gmailData.resultSizeEstimate || 0;
+          briefingData.emails = unreadCount;
+          
+          // Fetch details of top 3 unread emails for the briefing
+          briefingData.topUnreadEmails = [];
+          const messages = gmailData.messages || [];
+          
+          for (const msg of messages.slice(0, 3)) {
+            try {
+              const msgResponse = await fetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
+                {
+                  headers: { 'Authorization': `Bearer ${accessToken}` },
+                }
+              );
+              
+              if (msgResponse.ok) {
+                const msgData = await msgResponse.json();
+                const headers = msgData.payload?.headers || [];
+                const subject = headers.find((h: any) => h.name === 'Subject')?.value || '(No Subject)';
+                const from = headers.find((h: any) => h.name === 'From')?.value || 'Unknown Sender';
+                
+                briefingData.topUnreadEmails.push({ subject, from });
+              }
+            } catch (msgError) {
+              console.error(`[${traceId}] Error fetching email details:`, msgError);
+            }
+          }
+          
+          console.log(`[${traceId}] Daily briefing: LIVE unread email count for user ${tokenData.user_id}: ${unreadCount}`);
         }
 
         // Fetch today's reminders
@@ -251,7 +280,8 @@ ${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location
 Tasks (${briefingData.tasks.length} pending):
 ${briefingData.tasks.map((t: any) => `• ${t.title}${t.due ? ` - due ${t.due}` : ''}`).join('\n')}
 
-Emails: ${briefingData.emails} unread in Primary
+Emails: ${briefingData.emails} unread
+${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0 ? `Top unread:\n${briefingData.topUnreadEmails.map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')}` : ''}
 
 Reminders (${briefingData.reminders.length} today):
 ${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}
@@ -260,7 +290,7 @@ CRITICAL FORMATTING RULES:
 - Use Celsius (°C) for all temperatures, NEVER Fahrenheit
 - Use IST timezone for all times
 - Format with emojis (🌤️ for weather, 📰 for news, 📅 for calendar, ✅ for tasks, 📧 for emails, ⏰ for reminders)
-- Start with weather, then news headlines (1 line each), then calendar, tasks, emails, and reminders
+- Start with weather, then news headlines (1 line each), then calendar, tasks, emails (mention count and optionally 1-2 notable subjects), and reminders
 - Be encouraging, warm, and actionable - like a caring personal assistant
 - Keep it conversational and friendly, not robotic`;
 
