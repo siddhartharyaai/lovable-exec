@@ -959,6 +959,40 @@ serve(async (req) => {
         sessionData.current_topic = `email_draft_${Date.now()}`;
       }
     }
+
+    // ============= FIX A: ALWAYS EXTRACT SLOTS FOR "EMAIL AGAIN" FLOWS =============
+    // For "email again..." messages, extract slots regardless of forcedIntent/routedIntent
+    const lastEmailRecipient = sessionData?.last_email_recipient;
+    if (msgLower.includes('again') && lastEmailRecipient) {
+      console.log(`[${traceId}] 🔁 "Email again" flow detected with lastRecipient: ${lastEmailRecipient.name}`);
+      const extracted = extractEmailSlotsFromMessage(finalMessage, userName);
+      if (extracted) {
+        console.log(`[${traceId}] ✉️ Auto-extracted email slots for "again" flow:`, extracted);
+        
+        // Store in session_state immediately
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          pending_slots: {
+            intent: 'compose_email',
+            collected: {
+              subject: extracted.subject,
+              body: extracted.body
+            },
+            required_slots: [] // All slots filled
+          },
+          current_topic: `email_draft_${Date.now()}`,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        
+        // Update local session data for context
+        sessionData.pending_slots = {
+          intent: 'compose_email',
+          collected: { subject: extracted.subject, body: extracted.body },
+          required_slots: []
+        };
+        sessionData.current_topic = `email_draft_${Date.now()}`;
+      }
+    }
     
     // Add document context if available
     if (lastDoc) {
