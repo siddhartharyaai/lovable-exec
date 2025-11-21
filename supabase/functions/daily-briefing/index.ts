@@ -144,6 +144,7 @@ serve(async (req) => {
         }
 
         // Fetch LIVE unread email count and top subjects
+        console.log(`[${traceId}] Fetching unread emails with q=is:unread&maxResults=10`);
         const gmailResponse = await fetch(
           'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread&maxResults=10',
           {
@@ -156,12 +157,15 @@ serve(async (req) => {
           const unreadCount = gmailData.resultSizeEstimate || 0;
           briefingData.emails = unreadCount;
           
+          console.log(`[${traceId}] Gmail API returned ${unreadCount} unread emails, ${(gmailData.messages || []).length} message IDs`);
+          
           // Fetch details of top 3 unread emails for the briefing
           briefingData.topUnreadEmails = [];
           const messages = gmailData.messages || [];
           
           for (const msg of messages.slice(0, 3)) {
             try {
+              console.log(`[${traceId}] Fetching details for message id=${msg.id}`);
               const msgResponse = await fetch(
                 `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
                 {
@@ -176,13 +180,14 @@ serve(async (req) => {
                 const from = headers.find((h: any) => h.name === 'From')?.value || 'Unknown Sender';
                 
                 briefingData.topUnreadEmails.push({ subject, from });
+                console.log(`[${traceId}] Extracted email: "${subject}" from ${from}`);
               }
             } catch (msgError) {
               console.error(`[${traceId}] Error fetching email details:`, msgError);
             }
           }
           
-          console.log(`[${traceId}] Daily briefing: LIVE unread email count for user ${tokenData.user_id}: ${unreadCount}`);
+          console.log(`[${traceId}] Daily briefing: LIVE unread email count for user ${tokenData.user_id}: ${unreadCount}, top emails extracted: ${briefingData.topUnreadEmails.length}`);
         }
 
         // Fetch today's reminders
@@ -320,6 +325,8 @@ CRITICAL FORMATTING RULES:
 
         const aiData = await aiResponse.json();
         const briefingMessage = `☀️ **Good Morning! Your Daily Briefing**\n\n${aiData.choices[0].message.content}`;
+
+        console.log(`[${traceId}] Generated briefing (${briefingMessage.length} chars): ${briefingMessage.substring(0, 200)}...`);
 
         // Send briefing via WhatsApp
         const { error: sendError } = await supabase.functions.invoke('send-whatsapp', {
