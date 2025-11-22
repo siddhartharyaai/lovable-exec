@@ -40,7 +40,7 @@ serve(async (req) => {
   }
 
   const traceId = crypto.randomUUID();
-  console.log(`[${traceId}] Generating daily briefings...`);
+  console.log(`[${traceId}] === DAILY BRIEFING v2.0 WITH CITY & GMAIL LOGGING === Generating daily briefings...`);
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -72,6 +72,22 @@ serve(async (req) => {
           console.log(`[${traceId}] No valid token for user ${tokenData.user_id}`);
           failed++;
           continue;
+        }
+
+        // Verify Gmail account being used
+        console.log(`[${traceId}] Fetching Gmail account info for user ${tokenData.user_id}`);
+        const userinfoResponse = await fetch(
+          'https://www.googleapis.com/oauth2/v2/userinfo',
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+        
+        if (userinfoResponse.ok) {
+          const userinfoData = await userinfoResponse.json();
+          console.log(`[${traceId}] Using Gmail account: ${userinfoData.email} (${userinfoData.name})`);
+        } else {
+          console.log(`[${traceId}] Could not fetch Gmail account info`);
         }
 
         // Collect data for briefing
@@ -143,10 +159,11 @@ serve(async (req) => {
           }
         }
 
-        // Fetch LIVE unread email count and top subjects
-        console.log(`[${traceId}] Fetching unread emails with q=is:unread&maxResults=10`);
+        // Fetch LIVE unread email count and top subjects  
+        const gmailQuery = 'in:inbox is:unread';
+        console.log(`[${traceId}] Fetching unread emails with q=${gmailQuery}&maxResults=10`);
         const gmailResponse = await fetch(
-          'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread&maxResults=10',
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=10`,
           {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           }
@@ -222,6 +239,7 @@ serve(async (req) => {
 
         const userCity = userData?.city || 'Mumbai';
         briefingData.city = userCity;
+        console.log(`[${traceId}] User city from database: ${userData?.city || 'NULL'}, using city: ${userCity}`);
 
         // Fetch weather forecast using SERP API
         const serpApiKey = Deno.env.get('SERP_API_KEY');
