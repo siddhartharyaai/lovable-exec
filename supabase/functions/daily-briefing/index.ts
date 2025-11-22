@@ -159,8 +159,8 @@ serve(async (req) => {
           }
         }
 
-        // Fetch LIVE unread email count and top subjects  
-        const gmailQuery = 'in:inbox is:unread';
+        // Fetch LIVE unread email count and top subjects (Primary category only)
+        const gmailQuery = 'category:primary is:unread';
         console.log(`[${traceId}] Fetching unread emails with q=${gmailQuery}&maxResults=10`);
         const gmailResponse = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=10`,
@@ -237,9 +237,10 @@ serve(async (req) => {
           .eq('id', tokenData.user_id)
           .single();
 
+        // Use stored user city, fallback to Mumbai only if not set. Never change city based on API results.
         const userCity = userData?.city || 'Mumbai';
         briefingData.city = userCity;
-        console.log(`[${traceId}] User city from database: ${userData?.city || 'NULL'}, using city: ${userCity}`);
+        console.log(`[${traceId}] User city from database: ${userData?.city || 'NULL'}, using city: ${userCity} (this will not change regardless of weather API results)`);
 
         // Fetch weather forecast using SERP API
         const serpApiKey = Deno.env.get('SERP_API_KEY');
