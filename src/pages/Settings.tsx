@@ -22,6 +22,17 @@ const Settings = () => {
   const [city, setCity] = useState("Mumbai");
   const [isSavingCity, setIsSavingCity] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
+  const [briefingTime, setBriefingTime] = useState("08:00");
+  const [gmailTabPreference, setGmailTabPreference] = useState("primary");
+  const [briefingSections, setBriefingSections] = useState({
+    weather: true,
+    news: true,
+    tasks: true,
+    calendar: true,
+    emails: true,
+    reminders: true
+  });
+  const [isSavingBriefing, setIsSavingBriefing] = useState(false);
 
   useEffect(() => {
     checkGoogleConnection();
@@ -61,7 +72,7 @@ const Settings = () => {
       // Check if this specific phone number has Google connected
       const { data: userData } = await supabase
         .from('users')
-        .select('id, email, name, city')
+        .select('id, email, name, city, briefing_time, gmail_tab_preference, briefing_sections')
         .eq('phone', phoneNumber)
         .maybeSingle();
       
@@ -79,6 +90,15 @@ const Settings = () => {
       }
       if (userData.city) {
         setCity(userData.city);
+      }
+      if (userData.briefing_time) {
+        setBriefingTime(userData.briefing_time);
+      }
+      if (userData.gmail_tab_preference) {
+        setGmailTabPreference(userData.gmail_tab_preference);
+      }
+      if (userData.briefing_sections) {
+        setBriefingSections(userData.briefing_sections as any);
       }
 
       const { data: tokenData } = await supabase
@@ -275,6 +295,48 @@ const Settings = () => {
       });
     } finally {
       setIsSavingName(false);
+    }
+  };
+
+  const handleSaveBriefingSettings = async () => {
+    if (!phoneNumber) return;
+
+    setIsSavingBriefing(true);
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone', phoneNumber)
+        .maybeSingle();
+      
+      if (!userData) {
+        throw new Error('User not found. Please enter your WhatsApp phone number.');
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({ 
+          briefing_time: briefingTime,
+          gmail_tab_preference: gmailTabPreference,
+          briefing_sections: briefingSections
+        })
+        .eq('id', userData.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Briefing Settings Updated",
+        description: `Your daily briefing will arrive at ${briefingTime} IST`,
+      });
+    } catch (error) {
+      console.error('Error saving briefing settings:', error);
+      toast({
+        title: "Failed to save settings",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingBriefing(false);
     }
   };
 
@@ -511,6 +573,128 @@ const Settings = () => {
               <p className="text-xs text-muted-foreground">
                 Timezone is auto-detected. Contact support to change.
               </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Daily Briefing Settings */}
+        <Card className="p-6">
+          <h2 className="text-2xl font-semibold mb-6">Daily Briefing Settings</h2>
+          
+          <div className="space-y-6">
+            {/* Briefing Time */}
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="briefing-time" className="text-base font-semibold">
+                  Briefing Time
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  What time would you like to receive your daily briefing? (IST)
+                </p>
+              </div>
+              <Input
+                id="briefing-time"
+                type="time"
+                value={briefingTime}
+                onChange={(e) => setBriefingTime(e.target.value)}
+                className="max-w-xs"
+              />
+            </div>
+
+            {/* Gmail Tab Preference */}
+            <div className="space-y-3 pt-4 border-t">
+              <div>
+                <Label htmlFor="gmail-tab" className="text-base font-semibold">
+                  Gmail Tab
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Which Gmail tab should be checked for unread emails?
+                </p>
+              </div>
+              <select
+                id="gmail-tab"
+                value={gmailTabPreference}
+                onChange={(e) => setGmailTabPreference(e.target.value)}
+                className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="primary">Primary Only</option>
+                <option value="all">All Mail</option>
+                <option value="promotions">Promotions</option>
+                <option value="updates">Updates</option>
+              </select>
+            </div>
+
+            {/* Briefing Sections */}
+            <div className="space-y-3 pt-4 border-t">
+              <div>
+                <Label className="text-base font-semibold mb-3 block">
+                  Briefing Sections
+                </Label>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Choose which sections to include in your daily briefing
+                </p>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="section-weather">Weather</Label>
+                  <Switch
+                    id="section-weather"
+                    checked={briefingSections.weather}
+                    onCheckedChange={(checked) => setBriefingSections({...briefingSections, weather: checked})}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="section-news">News Headlines</Label>
+                  <Switch
+                    id="section-news"
+                    checked={briefingSections.news}
+                    onCheckedChange={(checked) => setBriefingSections({...briefingSections, news: checked})}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="section-tasks">Tasks</Label>
+                  <Switch
+                    id="section-tasks"
+                    checked={briefingSections.tasks}
+                    onCheckedChange={(checked) => setBriefingSections({...briefingSections, tasks: checked})}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="section-calendar">Calendar Events</Label>
+                  <Switch
+                    id="section-calendar"
+                    checked={briefingSections.calendar}
+                    onCheckedChange={(checked) => setBriefingSections({...briefingSections, calendar: checked})}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="section-emails">Emails</Label>
+                  <Switch
+                    id="section-emails"
+                    checked={briefingSections.emails}
+                    onCheckedChange={(checked) => setBriefingSections({...briefingSections, emails: checked})}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="section-reminders">Reminders</Label>
+                  <Switch
+                    id="section-reminders"
+                    checked={briefingSections.reminders}
+                    onCheckedChange={(checked) => setBriefingSections({...briefingSections, reminders: checked})}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-4 border-t">
+              <Button 
+                onClick={handleSaveBriefingSettings} 
+                disabled={isSavingBriefing || !phoneNumber}
+                size="default"
+              >
+                {isSavingBriefing ? 'Saving...' : 'Save Briefing Settings'}
+              </Button>
             </div>
           </div>
         </Card>
