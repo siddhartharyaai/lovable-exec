@@ -658,10 +658,13 @@ export type Database = {
       users: {
         Row: {
           birthday_reminders_enabled: boolean
+          briefing_sections: Json | null
+          briefing_time: string | null
           city: string | null
           created_at: string
           daily_briefing_enabled: boolean
           email: string | null
+          gmail_tab_preference: string | null
           id: string
           name: string | null
           phone: string
@@ -671,10 +674,13 @@ export type Database = {
         }
         Insert: {
           birthday_reminders_enabled?: boolean
+          briefing_sections?: Json | null
+          briefing_time?: string | null
           city?: string | null
           created_at?: string
           daily_briefing_enabled?: boolean
           email?: string | null
+          gmail_tab_preference?: string | null
           id?: string
           name?: string | null
           phone: string
@@ -684,10 +690,13 @@ export type Database = {
         }
         Update: {
           birthday_reminders_enabled?: boolean
+          briefing_sections?: Json | null
+          briefing_time?: string | null
           city?: string | null
           created_at?: string
           daily_briefing_enabled?: boolean
           email?: string | null
+          gmail_tab_preference?: string | null
           id?: string
           name?: string | null
           phone?: string
