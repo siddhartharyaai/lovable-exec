@@ -160,10 +160,9 @@ serve(async (req) => {
         }
 
         // Fetch LIVE unread email count and top subjects (Primary category only)
-        const gmailQuery = 'category:primary is:unread';
-        console.log(`[${traceId}] Fetching unread emails with q=${gmailQuery}&maxResults=10`);
+        console.log(`[${traceId}] Gmail primary query: category:primary is:unread&maxResults=10`);
         const gmailResponse = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=10`,
+          "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=category:primary is:unread&maxResults=10",
           {
             headers: { 'Authorization': `Bearer ${accessToken}` },
           }
@@ -172,39 +171,46 @@ serve(async (req) => {
         if (gmailResponse.ok) {
           const gmailData = await gmailResponse.json();
           const unreadCount = gmailData.resultSizeEstimate || 0;
-          briefingData.emails = unreadCount;
-          
-          console.log(`[${traceId}] Gmail API returned ${unreadCount} unread emails, ${(gmailData.messages || []).length} message IDs`);
-          
-          // Fetch details of top 3 unread emails for the briefing
-          briefingData.topUnreadEmails = [];
           const messages = gmailData.messages || [];
-          
+
+          // Use this PRIMARY-only query result for both count and top subjects
+          briefingData.emails = unreadCount;
+          briefingData.topUnreadEmails = [];
+
+          console.log(
+            `[${traceId}] Gmail primary resultSizeEstimate: ${unreadCount}, messages returned: ${messages.length}`
+          );
+
+          // Fetch details of top 3 unread emails for the briefing (PRIMARY only)
           for (const msg of messages.slice(0, 3)) {
             try {
-              console.log(`[${traceId}] Fetching details for message id=${msg.id}`);
+              console.log(`[${traceId}] Fetching PRIMARY message details for id=${msg.id}`);
               const msgResponse = await fetch(
                 `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
                 {
                   headers: { 'Authorization': `Bearer ${accessToken}` },
                 }
               );
-              
+
               if (msgResponse.ok) {
                 const msgData = await msgResponse.json();
                 const headers = msgData.payload?.headers || [];
                 const subject = headers.find((h: any) => h.name === 'Subject')?.value || '(No Subject)';
                 const from = headers.find((h: any) => h.name === 'From')?.value || 'Unknown Sender';
-                
+
                 briefingData.topUnreadEmails.push({ subject, from });
-                console.log(`[${traceId}] Extracted email: "${subject}" from ${from}`);
+                console.log(
+                  `[${traceId}] Primary top unread: "${subject}" from ${from}`
+                );
               }
             } catch (msgError) {
-              console.error(`[${traceId}] Error fetching email details:`, msgError);
+              console.error(`[${traceId}] Error fetching PRIMARY email details:`, msgError);
             }
           }
-          
-          console.log(`[${traceId}] Daily briefing: LIVE unread email count for user ${tokenData.user_id}: ${unreadCount}, top emails extracted: ${briefingData.topUnreadEmails.length}`);
+
+          console.log(
+            `[${traceId}] Daily briefing: LIVE PRIMARY unread email count for user ${tokenData.user_id}: ${unreadCount}, top emails extracted: ${briefingData.topUnreadEmails.length}`
+          );
         }
 
         // Fetch today's reminders
