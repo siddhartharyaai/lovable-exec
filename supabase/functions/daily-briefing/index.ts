@@ -114,7 +114,20 @@ serve(async (req) => {
 
         const userCity = userData?.city || 'Mumbai';
         const gmailTab = userData?.gmail_tab_preference || 'primary';
-        const sections = userData?.briefing_sections || {
+        
+        // Parse briefing_sections correctly - handle both string and object
+        let sections = userData?.briefing_sections;
+        if (typeof sections === 'string') {
+          try {
+            sections = JSON.parse(sections);
+          } catch (e) {
+            console.error(`[${traceId}] Failed to parse briefing_sections:`, e);
+            sections = null;
+          }
+        }
+        
+        // Default to all enabled if not set
+        sections = sections || {
           weather: true,
           news: true,
           tasks: true,
@@ -123,7 +136,9 @@ serve(async (req) => {
           reminders: true
         };
 
-        console.log(`[${traceId}] User preferences: city=${userCity}, gmailTab=${gmailTab}, sections=`, sections);
+        console.log(`[${traceId}] User preferences: city=${userCity}, gmailTab=${gmailTab}`);
+        console.log(`[${traceId}] Briefing sections parsed:`, sections);
+        console.log(`[${traceId}] Running sections: weather=${sections.weather !== false ? 'yes' : 'no'}, news=${sections.news !== false ? 'yes' : 'no'}, calendar=${sections.calendar !== false ? 'yes' : 'no'}, tasks=${sections.tasks !== false ? 'yes' : 'no'}, emails=${sections.emails !== false ? 'yes' : 'no'}, reminders=${sections.reminders !== false ? 'yes' : 'no'}`);
 
         // Collect data for briefing
         const briefingData: any = {
@@ -140,7 +155,7 @@ serve(async (req) => {
         const todayEnd = new Date();
         todayEnd.setHours(23, 59, 59, 999);
 
-        if (sections.calendar) {
+        if (sections.calendar !== false) {
           const calResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
             `timeMin=${todayStart.toISOString()}&` +
@@ -163,11 +178,16 @@ serve(async (req) => {
               }),
               location: event.location
             }));
+            console.log(`[${traceId}] Calendar: fetched ${briefingData.calendar.length} events`);
+          } else {
+            console.log(`[${traceId}] Section skipped: Calendar API returned error`);
           }
+        } else {
+          console.log(`[${traceId}] Section disabled: Calendar`);
         }
 
         // Fetch pending tasks (if enabled)
-        if (sections.tasks) {
+        if (sections.tasks !== false) {
           const tasksListResponse = await fetch(
             'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
             {
@@ -207,14 +227,17 @@ serve(async (req) => {
                     title: taskTitle,
                     due: task.due ? new Date(task.due).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
                   });
-                }
               }
             }
           }
+          console.log(`[${traceId}] Tasks: fetched ${briefingData.tasks.length} pending tasks`);
+        } else {
+          console.log(`[${traceId}] Section disabled: Tasks`);
+        }
         }
 
         // Fetch LIVE unread email count and top subjects (if enabled)
-        if (sections.emails) {
+        if (sections.emails !== false) {
           // Build Gmail query based on user preference
           let gmailQuery = 'is:unread';
           if (gmailTab === 'primary') {
@@ -276,11 +299,15 @@ serve(async (req) => {
             console.log(
               `[${traceId}] Daily briefing: LIVE ${gmailTab} unread email count for user ${tokenData.user_id}: ${unreadCount}, top emails extracted: ${briefingData.topUnreadEmails.length}`
             );
+          } else {
+            console.log(`[${traceId}] Section skipped: Gmail API returned error`);
           }
+        } else {
+          console.log(`[${traceId}] Section disabled: Emails`);
         }
 
         // Fetch today's reminders (if enabled)
-        if (sections.reminders) {
+        if (sections.reminders !== false) {
           const { data: reminders } = await supabase
             .from('reminders')
             .select('text, due_ts')
@@ -301,14 +328,19 @@ serve(async (req) => {
                 hour12: true
               })
             }));
+            console.log(`[${traceId}] Reminders: fetched ${briefingData.reminders.length} reminders for today`);
+          } else {
+            console.log(`[${traceId}] Section skipped: No reminders found for today`);
           }
+        } else {
+          console.log(`[${traceId}] Section disabled: Reminders`);
         }
 
         // Fetch weather forecast using SERP API (if enabled)
         const serpApiKey = Deno.env.get('SERP_API_KEY');
         let weatherInfo = null;
         
-        if (sections.weather && serpApiKey) {
+        if (sections.weather !== false && serpApiKey) {
           try {
             const weatherResponse = await fetch(
               `https://serpapi.com/search.json?engine=google&q=weather+${encodeURIComponent(userCity)}+today&api_key=${serpApiKey}`
@@ -324,17 +356,28 @@ serve(async (req) => {
                   condition: answerBox.weather || answerBox.precipitation || 'Unknown',
                   humidity: answerBox.humidity || 'N/A'
                 };
+                console.log(`[${traceId}] Weather: fetched for ${userCity}`);
+              } else {
+                console.log(`[${traceId}] Section skipped: Weather returned no data`);
               }
+            } else {
+              console.log(`[${traceId}] Section skipped: Weather API returned error`);
             }
           } catch (weatherError) {
             console.error(`[${traceId}] Weather fetch error:`, weatherError);
+          }
+        } else {
+          if (sections.weather === false) {
+            console.log(`[${traceId}] Section disabled: Weather`);
+          } else if (!serpApiKey) {
+            console.log(`[${traceId}] Section skipped: Weather - SERP_API_KEY not configured`);
           }
         }
 
         // Fetch top 5 news headlines using SERP API (if enabled)
         let newsHeadlines: string[] = [];
         
-        if (sections.news && serpApiKey) {
+        if (sections.news !== false && serpApiKey) {
           try {
             const newsResponse = await fetch(
               `https://serpapi.com/search.json?engine=google_news&q=top+news+India+today&api_key=${serpApiKey}`
@@ -347,26 +390,40 @@ serve(async (req) => {
               newsHeadlines = newsResults.slice(0, 5).map((item: any) => 
                 item.title || item.snippet || ''
               ).filter((h: string) => h.length > 0);
+              
+              if (newsHeadlines.length > 0) {
+                console.log(`[${traceId}] News: fetched ${newsHeadlines.length} headlines`);
+              } else {
+                console.log(`[${traceId}] Section skipped: News returned 0 headlines`);
+              }
+            } else {
+              console.log(`[${traceId}] Section skipped: News API returned error`);
             }
           } catch (newsError) {
             console.error(`[${traceId}] News fetch error:`, newsError);
+          }
+        } else {
+          if (sections.news === false) {
+            console.log(`[${traceId}] Section disabled: News`);
+          } else if (!serpApiKey) {
+            console.log(`[${traceId}] Section skipped: News - SERP_API_KEY not configured`);
           }
         }
 
         // Generate AI-powered briefing
         const briefingPrompt = `Create a concise morning briefing (max 1500 chars) for today based on:
 
-${sections.weather && weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp} (use Celsius with °C), ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
+${sections.weather !== false && weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp} (use Celsius with °C), ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
 
-${sections.news && newsHeadlines.length > 0 ? `Top News Headlines:\n${newsHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join('\n')}` : ''}
+${sections.news !== false && newsHeadlines.length > 0 ? `Top News Headlines:\n${newsHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join('\n')}` : ''}
 
-${sections.calendar ? `Calendar (${briefingData.calendar.length} events):\n${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location ? ` (${e.location})` : ''}`).join('\n')}` : ''}
+${sections.calendar !== false && briefingData.calendar.length > 0 ? `Calendar (${briefingData.calendar.length} events):\n${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location ? ` (${e.location})` : ''}`).join('\n')}` : ''}
 
-${sections.tasks ? `Tasks (${briefingData.tasks.length} pending):\n${briefingData.tasks.map((t: any) => `• ${t.title}${t.due ? ` - due ${t.due}` : ''}`).join('\n')}` : ''}
+${sections.tasks !== false && briefingData.tasks.length > 0 ? `Tasks (${briefingData.tasks.length} pending):\n${briefingData.tasks.map((t: any) => `• ${t.title}${t.due ? ` - due ${t.due}` : ''}`).join('\n')}` : ''}
 
-${sections.emails ? `Emails: ${briefingData.emails} unread\n${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0 ? `Top unread:\n${briefingData.topUnreadEmails.map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')}` : ''}` : ''}
+${sections.emails !== false ? `Emails: ${briefingData.emails} unread\n${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0 ? `Top unread:\n${briefingData.topUnreadEmails.map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')}` : ''}` : ''}
 
-${sections.reminders ? `Reminders (${briefingData.reminders.length} today):\n${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}` : ''}
+${sections.reminders !== false && briefingData.reminders.length > 0 ? `Reminders (${briefingData.reminders.length} today):\n${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}` : ''}
 
 CRITICAL FORMATTING RULES:
 - Use Celsius (°C) for all temperatures, NEVER Fahrenheit
