@@ -115,30 +115,34 @@ serve(async (req) => {
         const userCity = userData?.city || 'Mumbai';
         const gmailTab = userData?.gmail_tab_preference || 'primary';
         
-        // Parse briefing_sections correctly - handle both string and object
-        let sections = userData?.briefing_sections;
-        if (typeof sections === 'string') {
+        // Parse briefing_sections into a normalized boolean map
+        const rawSections = userData?.briefing_sections;
+        let sections: any = {};
+
+        if (typeof rawSections === 'string') {
           try {
-            sections = JSON.parse(sections);
+            sections = JSON.parse(rawSections);
           } catch (e) {
-            console.error(`[${traceId}] Failed to parse briefing_sections:`, e);
-            sections = null;
+            console.error(`[${traceId}] Failed to parse briefing_sections string:`, e);
+            sections = {};
           }
+        } else if (rawSections && typeof rawSections === 'object') {
+          sections = rawSections;
         }
-        
-        // Default to all enabled if not set
-        sections = sections || {
-          weather: true,
-          news: true,
-          tasks: true,
-          calendar: true,
-          emails: true,
-          reminders: true
+
+        sections = {
+          weather: sections.weather ?? true,
+          news: sections.news ?? true,
+          tasks: sections.tasks ?? true,
+          calendar: sections.calendar ?? true,
+          emails: sections.emails ?? true,
+          reminders: sections.reminders ?? true,
         };
 
-        console.log(`[${traceId}] User preferences: city=${userCity}, gmailTab=${gmailTab}`);
-        console.log(`[${traceId}] Briefing sections parsed:`, sections);
-        console.log(`[${traceId}] Running sections: weather=${sections.weather !== false ? 'yes' : 'no'}, news=${sections.news !== false ? 'yes' : 'no'}, calendar=${sections.calendar !== false ? 'yes' : 'no'}, tasks=${sections.tasks !== false ? 'yes' : 'no'}, emails=${sections.emails !== false ? 'yes' : 'no'}, reminders=${sections.reminders !== false ? 'yes' : 'no'}`);
+        console.log(`[${traceId}] Briefing sections:`, JSON.stringify(sections));
+        console.log(
+          `[${traceId}] Running sections: weather=${sections.weather ? 'yes' : 'no'}, news=${sections.news ? 'yes' : 'no'}, calendar=${sections.calendar ? 'yes' : 'no'}, tasks=${sections.tasks ? 'yes' : 'no'}, emails=${sections.emails ? 'yes' : 'no'}, reminders=${sections.reminders ? 'yes' : 'no'}`
+        );
 
         // Collect data for briefing
         const briefingData: any = {
@@ -155,7 +159,7 @@ serve(async (req) => {
         const todayEnd = new Date();
         todayEnd.setHours(23, 59, 59, 999);
 
-        if (sections.calendar !== false) {
+        if (sections.calendar) {
           const calResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
             `timeMin=${todayStart.toISOString()}&` +
@@ -237,10 +241,10 @@ serve(async (req) => {
         }
 
         // Fetch LIVE unread email count and top subjects (if enabled)
-        if (sections.emails !== false) {
+        if (sections.emails) {
           // Build Gmail query based on user preference
           let gmailQuery = 'is:unread';
-          if (gmailTab === 'primary') {
+          if (gmailTab === 'primary' || gmailTab === 'primary_only') {
             gmailQuery = 'category:primary is:unread';
           } else if (gmailTab === 'promotions') {
             gmailQuery = 'category:promotions is:unread';
@@ -249,7 +253,9 @@ serve(async (req) => {
           }
           // 'all' means no category filter, just is:unread
           
-          console.log(`[${traceId}] Gmail query: ${gmailQuery}&maxResults=10`);
+          console.log(
+            `[${traceId}] Gmail query: ${gmailQuery}&maxResults=10`
+          );
           const gmailResponse = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(gmailQuery)}&maxResults=10`,
             {
@@ -266,7 +272,7 @@ serve(async (req) => {
             briefingData.topUnreadEmails = [];
 
             console.log(
-              `[${traceId}] Gmail (${gmailTab}) resultSizeEstimate: ${unreadCount}, messages returned: ${messages.length}`
+              `[${traceId}] Gmail primary resultSizeEstimate: ${unreadCount}, messages returned: ${messages.length}`
             );
 
             // Fetch details of top 3 unread emails for the briefing
@@ -288,7 +294,7 @@ serve(async (req) => {
 
                   briefingData.topUnreadEmails.push({ subject, from });
                   console.log(
-                    `[${traceId}] Top unread (${gmailTab}): "${subject}" from ${from}`
+                    `[${traceId}] Primary top unread: "${subject}" from ${from}`
                   );
                 }
               } catch (msgError) {
@@ -307,7 +313,7 @@ serve(async (req) => {
         }
 
         // Fetch today's reminders (if enabled)
-        if (sections.reminders !== false) {
+        if (sections.reminders) {
           const { data: reminders } = await supabase
             .from('reminders')
             .select('text, due_ts')
@@ -340,7 +346,7 @@ serve(async (req) => {
         const serpApiKey = Deno.env.get('SERP_API_KEY');
         let weatherInfo = null;
         
-        if (sections.weather !== false && serpApiKey) {
+        if (sections.weather && serpApiKey) {
           try {
             const weatherResponse = await fetch(
               `https://serpapi.com/search.json?engine=google&q=weather+${encodeURIComponent(userCity)}+today&api_key=${serpApiKey}`
@@ -367,7 +373,7 @@ serve(async (req) => {
             console.error(`[${traceId}] Weather fetch error:`, weatherError);
           }
         } else {
-          if (sections.weather === false) {
+          if (!sections.weather) {
             console.log(`[${traceId}] Section disabled: Weather`);
           } else if (!serpApiKey) {
             console.log(`[${traceId}] Section skipped: Weather - SERP_API_KEY not configured`);
@@ -377,7 +383,7 @@ serve(async (req) => {
         // Fetch top 5 news headlines using SERP API (if enabled)
         let newsHeadlines: string[] = [];
         
-        if (sections.news !== false && serpApiKey) {
+        if (sections.news && serpApiKey) {
           try {
             const newsResponse = await fetch(
               `https://serpapi.com/search.json?engine=google_news&q=top+news+India+today&api_key=${serpApiKey}`
@@ -403,7 +409,7 @@ serve(async (req) => {
             console.error(`[${traceId}] News fetch error:`, newsError);
           }
         } else {
-          if (sections.news === false) {
+          if (!sections.news) {
             console.log(`[${traceId}] Section disabled: News`);
           } else if (!serpApiKey) {
             console.log(`[${traceId}] Section skipped: News - SERP_API_KEY not configured`);
