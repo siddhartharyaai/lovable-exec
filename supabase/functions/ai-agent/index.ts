@@ -288,10 +288,19 @@ Body: "Got it, thanks."
     type: "function",
     function: {
       name: "read_tasks",
-      description: "Get all pending tasks from Google Tasks. Use when user asks 'what tasks do I have', 'show my to-do list', 'what's on my plate', 'what do I need to do'.",
+      description: "Get all pending tasks from Google Tasks. CRITICAL: This fetches and stores a complete task snapshot (up to 50 tasks) in session for numbered references. Use when user asks 'what tasks do I have', 'show my to-do list', 'what's on my plate', 'what do I need to do', 'balance pending tasks', 'remaining tasks', 'the rest of the tasks'.",
       parameters: {
         type: "object",
-        properties: {}
+        properties: {
+          show_all: {
+            type: "boolean",
+            description: "If true, show ALL tasks in one message (not just first 10). Use when user explicitly says 'show me all tasks', 'full list', 'complete list'."
+          },
+          show_rest: {
+            type: "boolean",
+            description: "If true, show tasks 11 onwards (the remainder). Use when user says 'show me the rest', 'the remaining tasks', 'the other tasks', 'balance tasks'."
+          }
+        }
       }
     }
   },
@@ -324,16 +333,23 @@ Body: "Got it, thanks."
     type: "function",
     function: {
       name: "complete_task",
-      description: "Mark a task as completed in Google Tasks. Use when user says 'mark done', 'complete task', 'finished', 'check off'. The task remains in history but marked as completed.",
+      description: "Mark a task as completed in Google Tasks. SUPPORTS THREE MODES: (1) By index from snapshot (e.g. 'complete task 4' → use taskIndex), (2) By title with fuzzy matching, (3) When user says 'both' after disambiguation → use completeBoth=true. Use when user says 'mark done', 'complete task', 'finished', 'check off', 'remove task X'.",
       parameters: {
         type: "object",
         properties: {
           task_title: { 
             type: "string", 
-            description: "Title or partial title of task to complete. Be flexible with matching" 
+            description: "Title or partial title of task to complete. Be flexible with matching. NOT REQUIRED if taskIndex is provided." 
+          },
+          task_index: {
+            type: "number",
+            description: "Task number from the numbered list (e.g., if user says 'complete 4' or 'remove 4', set this to 4). This uses the stored snapshot for deterministic completion."
+          },
+          complete_both: {
+            type: "boolean",
+            description: "If true, complete ALL pending disambiguation matches (when user replies 'both' to a disambiguation prompt). Use when user explicitly says 'both'."
           }
-        },
-        required: ["task_title"]
+        }
       }
     }
   },
@@ -657,6 +673,18 @@ NATURAL LANGUAGE & UX:
 - Use warm, natural Indian English. Be concise (100-150 words per response)
 - Anti-patterns: "Oh dear", "My sincerest apologies", "I apologize for the oversight", "It seems", "Could you please"
 - Good patterns: "Got it!", "On it!", "Let me check...", "Here's what I found:", "Done! ✅"
+
+TASKS NATURAL LANGUAGE (CRITICAL):
+- When user says "balance tasks", "remaining tasks", "rest of tasks", "the other X tasks", "show me the 15 more tasks":
+  → These are TASK-RELATED, NOT financial/banking queries
+  → Call read_tasks with show_rest=true to show tasks 11+ from stored snapshot
+- When user says "show all tasks", "full list", "complete list":
+  → Call read_tasks with show_all=true
+- When user says "remove 4" or "complete task 4":
+  → Call complete_task with task_index=4 (uses stored snapshot, NOT title matching)
+- When user replies "both" after task disambiguation:
+  → Call complete_task with complete_both=true
+- NEVER route "balance tasks" to web_search or financial queries - it means "show me the remaining tasks I haven't seen yet"
 
 LEARNED PATTERNS (from user interactions):
 ${patternsText}

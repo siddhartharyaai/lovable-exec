@@ -485,9 +485,11 @@ export type Database = {
           last_upload_ts: string | null
           last_uploaded_doc_id: string | null
           last_uploaded_doc_name: string | null
+          pending_disambiguation: Json | null
           pending_intent: Json | null
           pending_slots: Json | null
           recent_actions: Json | null
+          tasks_snapshot: Json | null
           updated_at: string | null
           user_id: string
           waiting_for: string[] | null
@@ -510,9 +512,11 @@ export type Database = {
           last_upload_ts?: string | null
           last_uploaded_doc_id?: string | null
           last_uploaded_doc_name?: string | null
+          pending_disambiguation?: Json | null
           pending_intent?: Json | null
           pending_slots?: Json | null
           recent_actions?: Json | null
+          tasks_snapshot?: Json | null
           updated_at?: string | null
           user_id: string
           waiting_for?: string[] | null
@@ -535,9 +539,11 @@ export type Database = {
           last_upload_ts?: string | null
           last_uploaded_doc_id?: string | null
           last_uploaded_doc_name?: string | null
+          pending_disambiguation?: Json | null
           pending_intent?: Json | null
           pending_slots?: Json | null
           recent_actions?: Json | null
+          tasks_snapshot?: Json | null
           updated_at?: string | null
           user_id?: string
           waiting_for?: string[] | null
