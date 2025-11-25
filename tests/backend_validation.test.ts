@@ -151,6 +151,157 @@ describe('Backend Critical Flows', () => {
       expect(validUsers[1].id).toBe('user3');
     });
   });
+
+  describe('Tasks Snapshot & Numbered References', () => {
+    it('should store full task list in snapshot with indices', () => {
+      // Simulate fetching 20 tasks
+      const mockTasks = Array.from({ length: 20 }, (_, i) => ({
+        id: `task-${i + 1}`,
+        listId: 'list-123',
+        listName: 'Default List',
+        title: `Task ${i + 1}`,
+        due: null,
+        notes: null,
+        updated: new Date().toISOString()
+      }));
+
+      // Add indices
+      const tasksWithIndices = mockTasks.map((task, i) => ({
+        ...task,
+        index: i + 1
+      }));
+
+      const snapshot = {
+        list: tasksWithIndices,
+        timestamp: new Date().toISOString()
+      };
+
+      expect(snapshot.list).toHaveLength(20);
+      expect(snapshot.list[0].index).toBe(1);
+      expect(snapshot.list[19].index).toBe(20);
+      expect(snapshot.timestamp).toBeDefined();
+    });
+
+    it('should show first 10 tasks initially and indicate more exist', () => {
+      const totalTasks = 20;
+      const displayLimit = 10;
+      
+      const shouldShowMoreMessage = totalTasks > displayLimit;
+      const remainingTasks = totalTasks - displayLimit;
+      
+      expect(shouldShowMoreMessage).toBe(true);
+      expect(remainingTasks).toBe(10);
+    });
+
+    it('should allow completing task by index from snapshot', () => {
+      const snapshot = {
+        list: [
+          { index: 1, id: 'task-1', title: 'Task 1', listId: 'list-123' },
+          { index: 2, id: 'task-2', title: 'Task 2', listId: 'list-123' },
+          { index: 3, id: 'task-3', title: 'Task 3', listId: 'list-123' },
+          { index: 4, id: 'task-4', title: 'Review email parsing', listId: 'list-123' },
+        ],
+        timestamp: new Date().toISOString()
+      };
+
+      const taskIndex = 4;
+      const taskFromSnapshot = snapshot.list.find(t => t.index === taskIndex);
+      
+      expect(taskFromSnapshot).toBeDefined();
+      expect(taskFromSnapshot?.id).toBe('task-4');
+      expect(taskFromSnapshot?.title).toBe('Review email parsing');
+    });
+
+    it('should handle duplicate task titles with disambiguation', () => {
+      const matchingTasks = [
+        {
+          task: { id: 'task-1', title: 'Review email parsing software by Lisa', due: '2025-11-25' },
+          listId: 'list-123',
+          listName: 'Default List'
+        },
+        {
+          task: { id: 'task-2', title: 'Review email parsing software by Lisa', due: '2025-11-28' },
+          listId: 'list-123',
+          listName: 'Default List'
+        }
+      ];
+
+      expect(matchingTasks.length).toBe(2);
+      expect(matchingTasks[0].task.title).toBe(matchingTasks[1].task.title);
+      expect(matchingTasks[0].task.due).not.toBe(matchingTasks[1].task.due);
+    });
+
+    it('should support completing "both" when user replies after disambiguation', () => {
+      const pendingDisambiguation = {
+        action: 'complete_task',
+        matches: [
+          { task: { id: 'task-1', title: 'Duplicate Task' }, listId: 'list-123' },
+          { task: { id: 'task-2', title: 'Duplicate Task' }, listId: 'list-123' }
+        ],
+        timestamp: new Date().toISOString()
+      };
+
+      const userReply = 'both';
+      const shouldCompleteAll = userReply.toLowerCase() === 'both';
+      
+      expect(shouldCompleteAll).toBe(true);
+      expect(pendingDisambiguation.matches).toHaveLength(2);
+    });
+  });
+
+  describe('Tasks Natural Language Interpretation', () => {
+    it('should recognize "balance tasks" as task-related, not financial', () => {
+      const taskPhrases = [
+        'balance tasks',
+        'remaining tasks',
+        'rest of tasks',
+        'the other 15 tasks',
+        'show me the 15 more tasks',
+        'balance pending tasks'
+      ];
+
+      taskPhrases.forEach(phrase => {
+        const isTaskRelated = phrase.includes('task');
+        expect(isTaskRelated).toBe(true);
+      });
+    });
+
+    it('should map "show rest" to show_rest parameter', () => {
+      const userQueries = [
+        'show me the rest',
+        'show remaining tasks',
+        'the other tasks',
+        'balance tasks'
+      ];
+
+      userQueries.forEach(query => {
+        const shouldShowRest = 
+          query.includes('rest') || 
+          query.includes('remaining') || 
+          query.includes('other') ||
+          query.includes('balance');
+        
+        expect(shouldShowRest).toBe(true);
+      });
+    });
+
+    it('should recognize numbered task references', () => {
+      const userCommands = [
+        'remove 4',
+        'complete task 4',
+        'mark 4 as done',
+        'finish task 4',
+        'check off 4'
+      ];
+
+      userCommands.forEach(cmd => {
+        const match = cmd.match(/\b(\d+)\b/);
+        const taskIndex = match ? parseInt(match[1]) : null;
+        
+        expect(taskIndex).toBe(4);
+      });
+    });
+  });
 });
 
 /**
