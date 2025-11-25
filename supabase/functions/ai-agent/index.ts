@@ -898,6 +898,66 @@ serve(async (req) => {
       console.log(`[${traceId}] 📝 Slot-filling mode active for topic: ${currentTopic}. Treating message as slot value.`);
     }
     
+    // ============= TASKS ROUTING: Explicit phrase detection BEFORE AI call =============
+    const msgLowerTasks = finalMessage.toLowerCase();
+    let tasksRouting: { action: string; show_all: boolean; show_rest: boolean } | null = null;
+    
+    // Detect "show me all tasks" / "full list"
+    if (msgLowerTasks.includes('show me all tasks') || 
+        msgLowerTasks.includes('show all tasks') ||
+        msgLowerTasks.includes('give me all tasks') ||
+        msgLowerTasks.includes('full list of tasks') ||
+        msgLowerTasks.includes('show full list') ||
+        msgLowerTasks.includes('all pending tasks')) {
+      console.log(`[${traceId}] 📋 ROUTING: "Show all tasks" detected`);
+      tasksRouting = { action: 'read_all', show_all: true, show_rest: false };
+    }
+    // Detect "show me the rest" / "remaining" / "balance" / "other tasks"
+    else if (msgLowerTasks.includes('show me the rest') ||
+             msgLowerTasks.includes('show rest') ||
+             msgLowerTasks.includes('remaining tasks') ||
+             msgLowerTasks.includes('the other tasks') ||
+             msgLowerTasks.includes('the other ') ||
+             msgLowerTasks.includes('balance tasks') ||
+             msgLowerTasks.includes('balance pending tasks') ||
+             msgLowerTasks.includes('rest of the tasks') ||
+             msgLowerTasks.includes('which are the ')) {
+      console.log(`[${traceId}] 📋 ROUTING: "Show rest of tasks" detected`);
+      tasksRouting = { action: 'read', show_all: false, show_rest: true };
+    }
+    // Detect initial task query (default view)
+    else if ((msgLowerTasks.includes('what tasks') && msgLowerTasks.includes('pending')) ||
+             msgLowerTasks.includes('show my tasks') ||
+             msgLowerTasks.includes('what are my tasks') ||
+             msgLowerTasks.includes('pending tasks') ||
+             (msgLowerTasks.includes('what tasks do i have'))) {
+      console.log(`[${traceId}] 📋 ROUTING: Initial task query detected (default view)`);
+      tasksRouting = { action: 'read', show_all: false, show_rest: false };
+    }
+    
+    // If tasks routing triggered, force execution
+    if (tasksRouting) {
+      console.log(`[${traceId}] 📋 FORCING tasks tool execution:`, tasksRouting);
+      const tasksResult = await supabase.functions.invoke('handle-tasks', {
+        body: { 
+          intent: {
+            entities: {
+              show_all: tasksRouting.show_all,
+              show_rest: tasksRouting.show_rest
+            }
+          }, 
+          userId, 
+          traceId,
+          action: tasksRouting.action
+        }
+      });
+      
+      const message = tasksResult.data?.message || 'No tasks found';
+      return new Response(JSON.stringify({ message }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Build conversation context
     const now = nowISO ? new Date(nowISO) : new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
@@ -1472,10 +1532,15 @@ function extractEmailSlotsFromMessage(message: string, userName: string): { subj
             case 'read_tasks':
               const readTasksResult = await supabase.functions.invoke('handle-tasks', {
                 body: { 
-                  intent: {}, 
+                  intent: {
+                    entities: {
+                      show_all: args.show_all || false,
+                      show_rest: args.show_rest || false
+                    }
+                  }, 
                   userId, 
                   traceId,
-                  action: 'read'
+                  action: args.show_all ? 'read_all' : 'read'
                 }
               });
               result = readTasksResult.data?.message || 'No tasks found';

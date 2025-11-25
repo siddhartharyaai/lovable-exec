@@ -447,7 +447,14 @@ serve(async (req) => {
         const startIndex = showRest ? 10 : 0;
         const tasksToShow = allTasksSnapshot.slice(startIndex, startIndex + displayLimit);
         
-        message = `✅ *Your Tasks* (${totalTasks} pending)\n\n`;
+        // CRITICAL: Header depends on view type
+        if (showRest) {
+          // Follow-up paging: "Okay, here are the next X tasks:"
+          message = `Okay, here are the next ${tasksToShow.length} tasks:\n\n`;
+        } else {
+          // Initial or full listing: "✅ *Your Tasks* (N pending)"
+          message = `✅ *Your Tasks* (${totalTasks} pending)\n\n`;
+        }
         
         // Group by list
         const tasksByList: Record<string, any[]> = {};
@@ -475,10 +482,25 @@ serve(async (req) => {
           message += '\n';
         });
 
-        if (!showAll && totalTasks > 10) {
-          const remaining = totalTasks - 10;
-          message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
-          message += `Reply "show me all tasks" or "show me the rest" to see the full list.`;
+        // CRITICAL: Footer logic
+        if (showAll) {
+          // "Show all tasks" mode: NO footer at all
+          // Do nothing
+        } else if (showRest) {
+          // "Show rest" mode: check if there are even more tasks beyond this page
+          const endIndex = startIndex + tasksToShow.length;
+          if (totalTasks > endIndex) {
+            const remaining = totalTasks - endIndex;
+            message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
+            message += `Reply "show me all tasks" to see the complete list.`;
+          }
+        } else {
+          // Initial view (first 10): show footer if more than 10 tasks
+          if (totalTasks > 10) {
+            const remaining = totalTasks - 10;
+            message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
+            message += `Reply "show me all tasks" or "show me the rest" to see the full list.`;
+          }
         }
       }
 
