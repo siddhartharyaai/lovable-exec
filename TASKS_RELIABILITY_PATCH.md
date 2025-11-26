@@ -11,8 +11,9 @@ Tasks experience had three critical issues:
 
 ### 1. Backend Changes (`handle-tasks/index.ts`)
 
-#### Task Snapshot Storage
+#### Task Snapshot Storage with Deduplication
 - Modified `read` action to fetch up to 50 tasks per list using pagination (`nextPageToken`)
+- **NEW: Deduplication logic** - Filters out exact duplicate titles within the same list using a `Set` keyed by `listId|normalizedTitle`
 - Added `read_all` action variant for showing complete list in one message
 - Stores full task list in `session_state.tasks_snapshot`:
 ```json
@@ -95,10 +96,18 @@ Added comprehensive test coverage for:
 
 ## Files Modified
 
-1. `supabase/functions/handle-tasks/index.ts` - Core task operations
+1. `supabase/functions/handle-tasks/index.ts` - Core task operations with deduplication
 2. `supabase/functions/ai-agent/index.ts` - Tool definitions and system prompt
 3. `tests/backend_validation.test.ts` - Test coverage
 4. Database migration for new session_state columns
+
+## Deduplication Details
+
+Tasks with identical titles within the same list are automatically deduplicated:
+- Uses normalized key: `listId + '|' + title.trim().toLowerCase()`
+- First occurrence is kept, subsequent duplicates are skipped
+- Deduplication happens during snapshot creation, so all views (initial/rest/full) see clean data
+- Logged for debugging: "Skipping duplicate task: [title] in list [listName]"
 
 ## Usage Examples
 
