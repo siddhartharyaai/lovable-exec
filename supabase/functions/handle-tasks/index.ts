@@ -370,8 +370,9 @@ serve(async (req) => {
       const listData = await listResponse.json();
       const lists = listData.items || [];
 
-      // Fetch all tasks with pagination (up to 50 per list)
+      // Fetch all tasks with pagination (up to 50 per list) and deduplicate
       const allTasksSnapshot: any[] = [];
+      const seenTasks = new Set<string>(); // For deduplication: listId|normalizedTitle
       let taskIndex = 1;
       
       for (const list of lists) {
@@ -398,6 +399,14 @@ serve(async (req) => {
           
           tasks.forEach((task: any) => {
             if (tasksInList < 50) { // Cap at 50 tasks per list
+              // Deduplicate: Skip if we've already seen this exact title in this list
+              const normalizedKey = `${list.id}|${task.title.trim().toLowerCase()}`;
+              if (seenTasks.has(normalizedKey)) {
+                console.log(`[${traceId}] Skipping duplicate task: "${task.title}" in list ${list.title}`);
+                return; // Skip this duplicate
+              }
+              
+              seenTasks.add(normalizedKey);
               allTasksSnapshot.push({
                 index: taskIndex++,
                 id: task.id,
@@ -443,9 +452,28 @@ serve(async (req) => {
       if (totalTasks === 0) {
         message = '✅ No pending tasks. You\'re all caught up!';
       } else {
-        const displayLimit = showAll ? totalTasks : 10;
-        const startIndex = showRest ? 10 : 0;
-        const tasksToShow = allTasksSnapshot.slice(startIndex, startIndex + displayLimit);
+        // CRITICAL: Calculate slice parameters based on view type
+        let displayLimit: number;
+        let startIndex: number;
+        
+        if (showAll) {
+          displayLimit = totalTasks; // Show everything
+          startIndex = 0;
+          console.log(`[${traceId}] SHOW ALL MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
+        } else if (showRest) {
+          displayLimit = totalTasks - 10; // Show everything after first 10
+          startIndex = 10;
+          console.log(`[${traceId}] SHOW REST MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
+        } else {
+          displayLimit = 10; // Show first 10 only
+          startIndex = 0;
+          console.log(`[${traceId}] INITIAL MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
+        }
+        
+        const endIndex = Math.min(startIndex + displayLimit, totalTasks);
+        const tasksToShow = allTasksSnapshot.slice(startIndex, endIndex);
+        
+        console.log(`[${traceId}] Slicing: allTasksSnapshot.length=${allTasksSnapshot.length}, startIndex=${startIndex}, endIndex=${endIndex}, tasksToShow.length=${tasksToShow.length}`);
         
         // CRITICAL: Header depends on view type
         if (showRest) {
@@ -464,6 +492,8 @@ serve(async (req) => {
           }
           tasksByList[task.listName].push(task);
         });
+        
+        console.log(`[${traceId}] Grouped tasks by list: ${Object.keys(tasksByList).length} lists`);
         
         Object.entries(tasksByList).forEach(([listName, tasks]) => {
           message += `*${listName}*\n`;
@@ -485,14 +515,16 @@ serve(async (req) => {
         // CRITICAL: Footer logic
         if (showAll) {
           // "Show all tasks" mode: NO footer at all
-          // Do nothing
+          console.log(`[${traceId}] SHOW ALL MODE: No footer`);
         } else if (showRest) {
           // "Show rest" mode: check if there are even more tasks beyond this page
-          const endIndex = startIndex + tasksToShow.length;
           if (totalTasks > endIndex) {
             const remaining = totalTasks - endIndex;
             message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
             message += `Reply "show me all tasks" to see the complete list.`;
+            console.log(`[${traceId}] SHOW REST MODE: Added footer for ${remaining} remaining tasks`);
+          } else {
+            console.log(`[${traceId}] SHOW REST MODE: No more tasks, no footer`);
           }
         } else {
           // Initial view (first 10): show footer if more than 10 tasks
@@ -500,6 +532,9 @@ serve(async (req) => {
             const remaining = totalTasks - 10;
             message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
             message += `Reply "show me all tasks" or "show me the rest" to see the full list.`;
+            console.log(`[${traceId}] INITIAL MODE: Added footer for ${remaining} remaining tasks`);
+          } else {
+            console.log(`[${traceId}] INITIAL MODE: All tasks shown, no footer`);
           }
         }
       }
