@@ -153,13 +153,33 @@ serve(async (req) => {
           city: userCity
         };
 
-        // Fetch today's calendar events (if enabled)
-        const todayStart = new Date();
+        // Compute today's date in IST (server-computed, not LLM-generated)
+        const nowUtc = new Date();
+        const nowIst = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        
+        const todayStart = new Date(nowIst);
         todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date();
+        
+        const todayEnd = new Date(nowIst);
         todayEnd.setHours(23, 59, 59, 999);
+        
+        // Create display string for today's date (e.g., "Wednesday, 27th November 2025")
+        const todayDisplay = nowIst.toLocaleDateString('en-IN', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'Asia/Kolkata'
+        });
+        
+        console.log(`[${traceId}] Briefing date (IST): nowIst=${nowIst.toISOString()}, todayStart=${todayStart.toISOString()}, todayEnd=${todayEnd.toISOString()}`);
+        console.log(`[${traceId}] Briefing heading date: ${todayDisplay}`);
 
         if (sections.calendar) {
+          console.log(
+            `[${traceId}] Briefing Calendar query: timeMin=${todayStart.toISOString()}, timeMax=${todayEnd.toISOString()}`
+          );
+          
           const calResponse = await fetch(
             `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
             `timeMin=${todayStart.toISOString()}&` +
@@ -182,7 +202,7 @@ serve(async (req) => {
               }),
               location: event.location
             }));
-            console.log(`[${traceId}] Calendar: fetched ${briefingData.calendar.length} events`);
+            console.log(`[${traceId}] Briefing Calendar: fetched ${briefingData.calendar.length} events`);
           } else {
             console.log(`[${traceId}] Section skipped: Calendar API returned error`);
           }
@@ -416,28 +436,32 @@ serve(async (req) => {
           }
         }
 
-        // Generate AI-powered briefing
-        const briefingPrompt = `Create a concise morning briefing (max 1500 chars) for today based on:
+        // Generate AI-powered briefing with EXPLICIT DATE
+        const briefingPrompt = `Create a concise morning briefing (max 1500 chars) for the user based on this data:
+
+TODAY'S DATE (USE THIS EXACT STRING IN YOUR HEADING): ${todayDisplay}
 
 ${sections.weather !== false && weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp} (use Celsius with °C), ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
 
 ${sections.news !== false && newsHeadlines.length > 0 ? `Top News Headlines:\n${newsHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join('\n')}` : ''}
 
-${sections.calendar !== false && briefingData.calendar.length > 0 ? `Calendar (${briefingData.calendar.length} events):\n${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location ? ` (${e.location})` : ''}`).join('\n')}` : ''}
+${sections.calendar !== false && briefingData.calendar.length > 0 ? `Calendar (${briefingData.calendar.length} events for TODAY):\n${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location ? ` (${e.location})` : ''}`).join('\n')}` : ''}
 
 ${sections.tasks !== false && briefingData.tasks.length > 0 ? `Tasks (${briefingData.tasks.length} pending):\n${briefingData.tasks.map((t: any) => `• ${t.title}${t.due ? ` - due ${t.due}` : ''}`).join('\n')}` : ''}
 
 ${sections.emails !== false ? `Emails: ${briefingData.emails} unread\n${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0 ? `Top unread:\n${briefingData.topUnreadEmails.map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')}` : ''}` : ''}
 
-${sections.reminders !== false && briefingData.reminders.length > 0 ? `Reminders (${briefingData.reminders.length} today):\n${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}` : ''}
+${sections.reminders !== false && briefingData.reminders.length > 0 ? `Reminders (${briefingData.reminders.length} for today):\n${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}` : ''}
 
 CRITICAL FORMATTING RULES:
+- Your first line MUST be: "Here's your briefing for today, ${todayDisplay}:" (use the EXACT date string provided above, do not change it)
 - Use Celsius (°C) for all temperatures, NEVER Fahrenheit
 - Use IST timezone for all times
 - Format with emojis (🌤️ for weather, 📰 for news, 📅 for calendar, ✅ for tasks, 📧 for emails, ⏰ for reminders)
 - Include only the sections provided above
 - Be clear and professional - like a capable executive assistant
-- Keep it conversational but not overly cheerful or repetitive`;
+- Keep it conversational but not overly cheerful or repetitive
+- DO NOT make up or change the date - use "${todayDisplay}" exactly as provided`;
 
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -450,11 +474,11 @@ CRITICAL FORMATTING RULES:
             messages: [
               { 
                 role: 'system', 
-                content: 'You are Man Friday, a professional executive assistant creating morning briefings. Be clear, actionable, and concise. CRITICAL: Always use Celsius (°C) for temperatures and IST for times. Keep a professional but warm tone without being overly cheerful.' 
+                content: `You are Man Friday, a professional executive assistant creating morning briefings. Be clear, actionable, and concise. CRITICAL: Always use Celsius (°C) for temperatures and IST for times. Keep a professional but warm tone without being overly cheerful. NEVER invent or change the date provided to you - use it exactly as given.` 
               },
               { role: 'user', content: briefingPrompt }
             ],
-            temperature: 0.5,
+            temperature: 0.3,
             max_tokens: 400,
           }),
         });
