@@ -902,14 +902,14 @@ serve(async (req) => {
     const msgLowerTasks = finalMessage.toLowerCase();
     let tasksRouting: { action: string; show_all: boolean; show_rest: boolean } | null = null;
     
-    // Detect "show me all tasks" / "full list"
-    if (msgLowerTasks.includes('show me all tasks') || 
-        msgLowerTasks.includes('show all tasks') ||
-        msgLowerTasks.includes('give me all tasks') ||
-        msgLowerTasks.includes('full list of tasks') ||
-        msgLowerTasks.includes('show full list') ||
-        msgLowerTasks.includes('all pending tasks')) {
-      console.log(`[${traceId}] 📋 ROUTING: "Show all tasks" detected`);
+    // Detect "show me all tasks" / "full list" - MUST be broad to catch "show all 44", "show all my tasks", etc.
+    if (msgLowerTasks.includes('show me all') || 
+        msgLowerTasks.includes('show all') ||
+        msgLowerTasks.includes('give me all') ||
+        msgLowerTasks.includes('full list') ||
+        msgLowerTasks.includes('show complete list') ||
+        msgLowerTasks.includes('all pending')) {
+      console.log(`[${traceId}] 📋 ROUTING: "Show all tasks" detected from: "${finalMessage}"`);
       tasksRouting = { action: 'read_all', show_all: true, show_rest: false };
     }
     // Detect "show me the rest" / "remaining" / "balance" / "other tasks"
@@ -919,10 +919,10 @@ serve(async (req) => {
              msgLowerTasks.includes('the other tasks') ||
              msgLowerTasks.includes('the other ') ||
              msgLowerTasks.includes('balance tasks') ||
-             msgLowerTasks.includes('balance pending tasks') ||
+             msgLowerTasks.includes('balance pending') ||
              msgLowerTasks.includes('rest of the tasks') ||
              msgLowerTasks.includes('which are the ')) {
-      console.log(`[${traceId}] 📋 ROUTING: "Show rest of tasks" detected`);
+      console.log(`[${traceId}] 📋 ROUTING: "Show rest of tasks" detected from: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: true };
     }
     // Detect initial task query (default view)
@@ -931,7 +931,7 @@ serve(async (req) => {
              msgLowerTasks.includes('what are my tasks') ||
              msgLowerTasks.includes('pending tasks') ||
              (msgLowerTasks.includes('what tasks do i have'))) {
-      console.log(`[${traceId}] 📋 ROUTING: Initial task query detected (default view)`);
+      console.log(`[${traceId}] 📋 ROUTING: Initial task query detected (default view) from: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: false };
     }
     
