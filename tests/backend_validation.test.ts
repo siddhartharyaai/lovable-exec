@@ -302,6 +302,68 @@ describe('Backend Critical Flows', () => {
       });
     });
   });
+
+  describe('Tasks Paging Logic', () => {
+    type PagingMode = 'initial' | 'rest' | 'all';
+
+    function computePagingSlice(totalTasks: number, lastEndIndex: number | null, mode: PagingMode) {
+      if (totalTasks <= 0) return { startIndex: 0, endIndex: 0, remaining: 0 };
+
+      if (mode === 'all') {
+        return { startIndex: 0, endIndex: totalTasks, remaining: 0 };
+      }
+
+      if (mode === 'initial') {
+        const displayLimit = Math.min(10, totalTasks);
+        const endIndex = displayLimit;
+        const remaining = Math.max(0, totalTasks - displayLimit);
+        return { startIndex: 0, endIndex, remaining };
+      }
+
+      // mode === 'rest': use lastEndIndex if available, otherwise fallback to 10 (i.e. show 11-20)
+      const effectiveLastEnd = lastEndIndex && lastEndIndex < totalTasks ? lastEndIndex : 10;
+      const startIndex = effectiveLastEnd; // 0-based
+      const displayLimit = Math.min(10, Math.max(0, totalTasks - effectiveLastEnd));
+      const endIndex = startIndex + displayLimit;
+      const remaining = Math.max(0, totalTasks - endIndex);
+      return { startIndex, endIndex, remaining };
+    }
+
+    it('initial view should show first 10 with footer when more exist', () => {
+      const { startIndex, endIndex, remaining } = computePagingSlice(44, null, 'initial');
+      expect(startIndex).toBe(0);
+      expect(endIndex).toBe(10);
+      expect(remaining).toBe(34);
+    });
+
+    it('first "show rest" should show 11-20 with footer', () => {
+      const { startIndex, endIndex, remaining } = computePagingSlice(44, 10, 'rest');
+      expect(startIndex).toBe(10);
+      expect(endIndex).toBe(20);
+      expect(remaining).toBe(24);
+    });
+
+    it('second "show rest" should show 21-30 with footer', () => {
+      const { startIndex, endIndex, remaining } = computePagingSlice(44, 20, 'rest');
+      expect(startIndex).toBe(20);
+      expect(endIndex).toBe(30);
+      expect(remaining).toBe(14);
+    });
+
+    it('final "show rest" should show last page without footer', () => {
+      const { startIndex, endIndex, remaining } = computePagingSlice(44, 40, 'rest');
+      expect(startIndex).toBe(40);
+      expect(endIndex).toBe(44);
+      expect(remaining).toBe(0);
+    });
+
+    it('"show all" should always return full range with no remaining', () => {
+      const { startIndex, endIndex, remaining } = computePagingSlice(44, null, 'all');
+      expect(startIndex).toBe(0);
+      expect(endIndex).toBe(44);
+      expect(remaining).toBe(0);
+    });
+  });
 });
 
 /**

@@ -355,117 +355,147 @@ serve(async (req) => {
       
       console.log(`[${traceId}] Tasks read action: showAll=${showAll}, showRest=${showRest}`);
       
-      // Get all task lists
-      const listResponse = await fetch(
-        'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
-        {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        }
-      );
-
-      if (!listResponse.ok) {
-        throw new Error('Failed to fetch task lists');
-      }
-
-      const listData = await listResponse.json();
-      const lists = listData.items || [];
-
-      // Fetch all tasks with pagination (up to 50 per list) and deduplicate
-      const allTasksSnapshot: any[] = [];
-      const seenTasks = new Set<string>(); // For deduplication: listId|normalizedTitle
-      let taskIndex = 1;
-      
-      for (const list of lists) {
-        let pageToken: string | undefined = undefined;
-        let tasksInList = 0;
-        
-        do {
-          let url = `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks?showCompleted=false&maxResults=100`;
-          if (pageToken) {
-            url += `&pageToken=${pageToken}`;
-          }
-          
-          const tasksResponse = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          
-          if (!tasksResponse.ok) {
-            console.error(`[${traceId}] Failed to fetch tasks for list ${list.id}`);
-            break;
-          }
-          
-          const tasksData = await tasksResponse.json();
-          const tasks = tasksData.items || [];
-          
-          tasks.forEach((task: any) => {
-            if (tasksInList < 50) { // Cap at 50 tasks per list
-              // Deduplicate: Skip if we've already seen this exact title in this list
-              const normalizedKey = `${list.id}|${task.title.trim().toLowerCase()}`;
-              if (seenTasks.has(normalizedKey)) {
-                console.log(`[${traceId}] Skipping duplicate task: "${task.title}" in list ${list.title}`);
-                return; // Skip this duplicate
-              }
-              
-              seenTasks.add(normalizedKey);
-              allTasksSnapshot.push({
-                index: taskIndex++,
-                id: task.id,
-                listId: list.id,
-                listName: list.title,
-                title: task.title,
-                due: task.due || null,
-                notes: task.notes || null,
-                updated: task.updated || null
-              });
-              tasksInList++;
-            }
-          });
-          
-          pageToken = tasksData.nextPageToken;
-          
-          // Stop if we've hit 50 tasks for this list
-          if (tasksInList >= 50) {
-            break;
-          }
-        } while (pageToken);
-      }
-      
-      const totalTasks = allTasksSnapshot.length;
-      console.log(`[${traceId}] Fetched ${totalTasks} total tasks across ${lists.length} lists`);
-      
-      // Store snapshot in session_state
-      await supabase
+      // Load existing snapshot + paging from session_state
+      const { data: sessionRow } = await supabase
         .from('session_state')
-        .upsert({
-          user_id: userId,
-          tasks_snapshot: {
-            list: allTasksSnapshot,
-            timestamp: new Date().toISOString()
-          },
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+        .select('tasks_snapshot, tasks_paging')
+        .eq('user_id', userId)
+        .single();
       
-      console.log(`[${traceId}] Stored tasks snapshot in session_state`);
-
+      let allTasksSnapshot: any[] = sessionRow?.tasks_snapshot?.list || [];
+      let totalTasks = allTasksSnapshot.length;
+      let pagingState = sessionRow?.tasks_paging as any | null;
+      
+      console.log(`[${traceId}] Loaded tasks snapshot from session_state: count=${totalTasks}`);
+      if (pagingState) {
+        console.log(`[${traceId}] Loaded paging state: last_start_index=${pagingState.last_start_index}, last_end_index=${pagingState.last_end_index}, total=${pagingState.total}`);
+      }
+      
+      // If no snapshot exists yet, fetch tasks from Google Tasks and build snapshot
+      if (!allTasksSnapshot || allTasksSnapshot.length === 0) {
+        console.log(`[${traceId}] No existing snapshot, fetching tasks from Google Tasks`);
+        
+        // Get all task lists
+        const listResponse = await fetch(
+          'https://tasks.googleapis.com/tasks/v1/users/@me/lists',
+          {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          }
+        );
+  
+        if (!listResponse.ok) {
+          throw new Error('Failed to fetch task lists');
+        }
+  
+        const listData = await listResponse.json();
+        const lists = listData.items || [];
+  
+        // Fetch all tasks with pagination (up to 50 per list) and deduplicate
+        allTasksSnapshot = [];
+        const seenTasks = new Set<string>(); // For deduplication: listId|normalizedTitle
+        let taskIndex = 1;
+        
+        for (const list of lists) {
+          let pageToken: string | undefined = undefined;
+          let tasksInList = 0;
+          
+          do {
+            let url = `https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks?showCompleted=false&maxResults=100`;
+            if (pageToken) {
+              url += `&pageToken=${pageToken}`;
+            }
+            
+            const tasksResponse = await fetch(url, {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+            
+            if (!tasksResponse.ok) {
+              console.error(`[${traceId}] Failed to fetch tasks for list ${list.id}`);
+              break;
+            }
+            
+            const tasksData = await tasksResponse.json();
+            const tasks = tasksData.items || [];
+            
+            tasks.forEach((task: any) => {
+              if (tasksInList < 50) { // Cap at 50 tasks per list
+                const normalizedKey = `${list.id}|${task.title.trim().toLowerCase()}`;
+                if (seenTasks.has(normalizedKey)) {
+                  console.log(`[${traceId}] Skipping duplicate task: "${task.title}" in list ${list.title}`);
+                  return;
+                }
+                
+                seenTasks.add(normalizedKey);
+                allTasksSnapshot.push({
+                  index: taskIndex++,
+                  id: task.id,
+                  listId: list.id,
+                  listName: list.title,
+                  title: task.title,
+                  due: task.due || null,
+                  notes: task.notes || null,
+                  updated: task.updated || null
+                });
+                tasksInList++;
+              }
+            });
+            
+            pageToken = tasksData.nextPageToken;
+            if (tasksInList >= 50) {
+              break;
+            }
+          } while (pageToken);
+        }
+        
+        totalTasks = allTasksSnapshot.length;
+        console.log(`[${traceId}] Fetched ${totalTasks} total tasks across ${allTasksSnapshot.length > 0 ? 'lists' : 'no lists'}`);
+        
+        // Store snapshot in session_state
+        await supabase
+          .from('session_state')
+          .upsert({
+            user_id: userId,
+            tasks_snapshot: {
+              list: allTasksSnapshot,
+              timestamp: new Date().toISOString()
+            },
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id'
+          });
+        
+        console.log(`[${traceId}] Stored tasks snapshot in session_state`);
+      }
+  
       if (totalTasks === 0) {
         message = '✅ No pending tasks. You\'re all caught up!';
       } else {
-        // CRITICAL: Calculate slice parameters based on view type
+        // Determine paging slice based on view type and previous paging state
         let displayLimit: number;
-        let startIndex: number;
+        let startIndex: number; // 0-based
         
         if (showAll) {
-          displayLimit = totalTasks; // Show everything
+          // FULL LIST
+          displayLimit = totalTasks;
           startIndex = 0;
           console.log(`[${traceId}] SHOW ALL MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
         } else if (showRest) {
-          displayLimit = totalTasks - 10; // Show everything after first 10
-          startIndex = 10;
-          console.log(`[${traceId}] SHOW REST MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
+          // NEXT PAGE based on last_end_index from paging state
+          const lastEndIndex = pagingState?.last_end_index as number | undefined;
+          if (lastEndIndex && lastEndIndex < totalTasks) {
+            // Continue from where we left off
+            startIndex = lastEndIndex; // convert 1-based to 0-based
+            displayLimit = Math.min(10, totalTasks - lastEndIndex);
+            console.log(`[${traceId}] SHOW REST MODE (from paging): last_end_index=${lastEndIndex}, startIndex=${startIndex}, displayLimit=${displayLimit}, totalTasks=${totalTasks}`);
+          } else {
+            // Fallback: assume first page was 1-10, so show 11-20
+            startIndex = 10;
+            displayLimit = Math.min(10, Math.max(0, totalTasks - 10));
+            console.log(`[${traceId}] SHOW REST MODE (fallback): startIndex=${startIndex}, displayLimit=${displayLimit}, totalTasks=${totalTasks}`);
+          }
         } else {
-          displayLimit = 10; // Show first 10 only
+          // INITIAL VIEW
+          displayLimit = Math.min(10, totalTasks);
           startIndex = 0;
           console.log(`[${traceId}] INITIAL MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
         }
@@ -475,15 +505,37 @@ serve(async (req) => {
         
         console.log(`[${traceId}] Slicing: allTasksSnapshot.length=${allTasksSnapshot.length}, startIndex=${startIndex}, endIndex=${endIndex}, tasksToShow.length=${tasksToShow.length}`);
         
-        // CRITICAL: Header depends on view type
+        // Update paging state in session_state for next calls
+        const newPagingState = {
+          total: totalTasks,
+          last_start_index: tasksToShow.length > 0 ? tasksToShow[0].index : 0,
+          last_end_index: tasksToShow.length > 0 ? tasksToShow[tasksToShow.length - 1].index : 0,
+          updated_at: new Date().toISOString()
+        };
+        
+        await supabase
+          .from('session_state')
+          .upsert({
+            user_id: userId,
+            tasks_snapshot: {
+              list: allTasksSnapshot,
+              timestamp: new Date().toISOString()
+            },
+            tasks_paging: newPagingState,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id'
+          });
+        
+        console.log(`[${traceId}] Updated tasks paging state: last_start_index=${newPagingState.last_start_index}, last_end_index=${newPagingState.last_end_index}, total=${newPagingState.total}`);
+  
+        // Header depends on view type
         if (showRest) {
-          // Follow-up paging: "Okay, here are the next X tasks:"
           message = `Okay, here are the next ${tasksToShow.length} tasks:\n\n`;
         } else {
-          // Initial or full listing: "✅ *Your Tasks* (N pending)"
           message = `✅ *Your Tasks* (${totalTasks} pending)\n\n`;
         }
-        
+  
         // Group by list
         const tasksByList: Record<string, any[]> = {};
         tasksToShow.forEach(task => {
@@ -511,13 +563,11 @@ serve(async (req) => {
           });
           message += '\n';
         });
-
-        // CRITICAL: Footer logic
+  
+        // Footer logic
         if (showAll) {
-          // "Show all tasks" mode: NO footer at all
           console.log(`[${traceId}] SHOW ALL MODE: No footer`);
         } else if (showRest) {
-          // "Show rest" mode: check if there are even more tasks beyond this page
           if (totalTasks > endIndex) {
             const remaining = totalTasks - endIndex;
             message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
@@ -527,11 +577,10 @@ serve(async (req) => {
             console.log(`[${traceId}] SHOW REST MODE: No more tasks, no footer`);
           }
         } else {
-          // Initial view (first 10): show footer if more than 10 tasks
-          if (totalTasks > 10) {
-            const remaining = totalTasks - 10;
+          if (totalTasks > displayLimit) {
+            const remaining = totalTasks - displayLimit;
             message += `...and ${remaining} more task${remaining > 1 ? 's' : ''}.\n`;
-            message += `Reply "show me all tasks" or "show me the rest" to see the full list.`;
+            message += `Reply "show me more" or "show me the rest" to see the next tasks.`;
             console.log(`[${traceId}] INITIAL MODE: Added footer for ${remaining} remaining tasks`);
           } else {
             console.log(`[${traceId}] INITIAL MODE: All tasks shown, no footer`);
