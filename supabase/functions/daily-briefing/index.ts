@@ -436,32 +436,53 @@ serve(async (req) => {
           }
         }
 
-        // Generate AI-powered briefing with EXPLICIT DATE
-        const briefingPrompt = `Create a concise morning briefing (max 1500 chars) for the user based on this data:
+        console.log(`[${traceId}] Daily briefing data summary: weather=${!!weatherInfo}, calendar=${briefingData.calendar.length}, tasks=${briefingData.tasks.length}, emailsUnread=${briefingData.emails}, reminders=${briefingData.reminders.length}`);
 
-TODAY'S DATE (USE THIS EXACT STRING IN YOUR HEADING): ${todayDisplay}
+        // Generate AI-powered briefing with EXPLICIT DATE and STABLE SECTION ORDER
+        const briefingPrompt = `You are Man Friday, an executive assistant preparing a concise daily briefing for WhatsApp.
 
-${sections.weather !== false && weatherInfo ? `Weather in ${userCity}: ${weatherInfo.temp} (use Celsius with °C), ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : ''}
+TODAY'S DATE (USE THIS EXACT STRING IN YOUR OUTPUT): ${todayDisplay}
 
-${sections.news !== false && newsHeadlines.length > 0 ? `Top News Headlines:\n${newsHeadlines.map((h: string, i: number) => `${i + 1}. ${h}`).join('\n')}` : ''}
+Here is the structured data for today:
 
-${sections.calendar !== false && briefingData.calendar.length > 0 ? `Calendar (${briefingData.calendar.length} events for TODAY):\n${briefingData.calendar.map((e: any) => `• ${e.title} at ${e.time}${e.location ? ` (${e.location})` : ''}`).join('\n')}` : ''}
+Weather:
+${weatherInfo ? `City: ${userCity}, Temp: ${weatherInfo.temp} (Celsius), Condition: ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : 'No weather data.'}
 
-${sections.tasks !== false && briefingData.tasks.length > 0 ? `Tasks (${briefingData.tasks.length} pending):\n${briefingData.tasks.map((t: any) => `• ${t.title}${t.due ? ` - due ${t.due}` : ''}`).join('\n')}` : ''}
+Calendar:
+${briefingData.calendar.length > 0
+  ? briefingData.calendar.map((e: any) => `- ${e.time}: ${e.title}${e.location ? ` (${e.location})` : ''}`).join('\n')
+  : 'No events today.'}
 
-${sections.emails !== false ? `Emails: ${briefingData.emails} unread\n${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0 ? `Top unread:\n${briefingData.topUnreadEmails.map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')}` : ''}` : ''}
+Tasks:
+${briefingData.tasks.length > 0
+  ? briefingData.tasks.slice(0, 5).map((t: any) => `- ${t.title}${t.due ? ` (due ${t.due})` : ''}`).join('\n')
+  : 'No pending tasks.'}
 
-${sections.reminders !== false && briefingData.reminders.length > 0 ? `Reminders (${briefingData.reminders.length} for today):\n${briefingData.reminders.map((r: any) => `• ${r.text} at ${r.time}`).join('\n')}` : ''}
+Emails:
+Unread count: ${briefingData.emails ?? 'unknown'}
+Top unread:
+${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0
+  ? briefingData.topUnreadEmails.slice(0, 3).map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')
+  : 'No individual emails to highlight.'}
 
-CRITICAL FORMATTING RULES:
-- Your first line MUST be: "Here's your briefing for today, ${todayDisplay}:" (use the EXACT date string provided above, do not change it)
-- Use Celsius (°C) for all temperatures, NEVER Fahrenheit
-- Use IST timezone for all times
-- Format with emojis (🌤️ for weather, 📰 for news, 📅 for calendar, ✅ for tasks, 📧 for emails, ⏰ for reminders)
-- Include only the sections provided above
-- Be clear and professional - like a capable executive assistant
-- Keep it conversational but not overly cheerful or repetitive
-- DO NOT make up or change the date - use "${todayDisplay}" exactly as provided`;
+Reminders:
+${briefingData.reminders.length > 0
+  ? briefingData.reminders.map((r: any) => `- ${r.time}: ${r.text}`).join('\n')
+  : 'No reminders today.'}
+
+CRITICAL OUTPUT RULES:
+- First line must be a short greeting and the title "Your Daily Briefing" (e.g., "🌅 Good morning. Your Daily Briefing").
+- Second line must say: "Here’s your briefing for today, ${todayDisplay}." (use this exact string, do NOT change the date).
+- After that, ALWAYS include sections in this exact order with headings and emojis:
+  1) Weather (🌤️)
+  2) Calendar (📅)
+  3) Pending Tasks (✅)
+  4) Emails (📧)
+  5) Reminders (⏰)
+- If a section has no data, STILL show the heading and explicitly say that (e.g. "No events on your calendar today.").
+- Use Celsius (°C) for temperatures and IST times in 12-hour format with AM/PM.
+- Keep the briefing under about 1500 characters.
+- Be clear and concise, like a capable human assistant, not overly enthusiastic.`;
 
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',

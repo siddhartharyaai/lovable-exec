@@ -902,35 +902,55 @@ serve(async (req) => {
     const msgLowerTasks = finalMessage.toLowerCase();
     let tasksRouting: { action: string; show_all: boolean; show_rest: boolean } | null = null;
     
-    // Detect "show me all tasks" / "full list" - MUST be broad to catch "show all 44", "show all my tasks", etc.
-    if (msgLowerTasks.includes('show me all') || 
-        msgLowerTasks.includes('show all') ||
-        msgLowerTasks.includes('give me all') ||
-        msgLowerTasks.includes('full list') ||
-        msgLowerTasks.includes('show complete list') ||
-        msgLowerTasks.includes('all pending')) {
+    // FULL LIST phrases: "show me all tasks", "show all 44", "give me all tasks", etc.
+    if (
+      msgLowerTasks.includes('show me all tasks') ||
+      msgLowerTasks.includes('show all tasks') ||
+      msgLowerTasks.includes('give me all tasks') ||
+      msgLowerTasks.includes('all pending tasks') ||
+      msgLowerTasks.includes('give me the full list of tasks') ||
+      msgLowerTasks.includes('list all my tasks') ||
+      // Broad catch for variants like "show all 44", "show all my tasks"
+      (msgLowerTasks.includes('show all') && msgLowerTasks.includes('task')) ||
+      (msgLowerTasks.includes('all pending') && msgLowerTasks.includes('task'))
+    ) {
       console.log(`[${traceId}] 📋 ROUTING: "Show all tasks" detected from: "${finalMessage}"`);
       tasksRouting = { action: 'read_all', show_all: true, show_rest: false };
     }
-    // Detect "show me the rest" / "remaining" / "balance" / "other tasks"
-    else if (msgLowerTasks.includes('show me the rest') ||
-             msgLowerTasks.includes('show rest') ||
-             msgLowerTasks.includes('remaining tasks') ||
-             msgLowerTasks.includes('the other tasks') ||
-             msgLowerTasks.includes('the other ') ||
-             msgLowerTasks.includes('balance tasks') ||
-             msgLowerTasks.includes('balance pending') ||
-             msgLowerTasks.includes('rest of the tasks') ||
-             msgLowerTasks.includes('which are the ')) {
+    // REST / NEXT PAGE phrases: "show me the rest", "show me more", "balance tasks", etc.
+    else if (
+      msgLowerTasks.includes('show me the rest') ||
+      msgLowerTasks.includes('show rest') ||
+      msgLowerTasks.includes('show me more') ||
+      msgLowerTasks.includes('show more tasks') ||
+      msgLowerTasks.includes('show more') ||
+      msgLowerTasks.includes('show remaining tasks') ||
+      msgLowerTasks.includes('remaining tasks') ||
+      msgLowerTasks.includes('the other tasks') ||
+      msgLowerTasks.includes('the other 10 tasks') ||
+      msgLowerTasks.includes('the other 34 tasks') ||
+      msgLowerTasks.includes('the other ') ||
+      msgLowerTasks.includes('balance tasks') ||
+      msgLowerTasks.includes('balance pending tasks') ||
+      msgLowerTasks.includes('balance pending') ||
+      msgLowerTasks.includes('rest of the tasks') ||
+      msgLowerTasks.includes('rest of tasks') ||
+      msgLowerTasks.includes('which are the ')
+    ) {
       console.log(`[${traceId}] 📋 ROUTING: "Show rest of tasks" detected from: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: true };
     }
-    // Detect initial task query (default view)
-    else if ((msgLowerTasks.includes('what tasks') && msgLowerTasks.includes('pending')) ||
-             msgLowerTasks.includes('show my tasks') ||
-             msgLowerTasks.includes('what are my tasks') ||
-             msgLowerTasks.includes('pending tasks') ||
-             (msgLowerTasks.includes('what tasks do i have'))) {
+    // INITIAL VIEW phrases: "what tasks do I have", "what tasks are pending", "show my tasks"
+    else if (
+      (msgLowerTasks.includes('what tasks') && msgLowerTasks.includes('pending')) ||
+      msgLowerTasks.includes('what tasks do i have') ||
+      msgLowerTasks.includes('what tasks do i') ||
+      msgLowerTasks.includes('what tasks are pending') ||
+      msgLowerTasks.includes('show my tasks') ||
+      msgLowerTasks.includes('pending tasks') ||
+      msgLowerTasks.includes('what are my tasks') ||
+      msgLowerTasks.includes('what tasks do i have today')
+    ) {
       console.log(`[${traceId}] 📋 ROUTING: Initial task query detected (default view) from: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: false };
     }
