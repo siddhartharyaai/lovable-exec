@@ -6,6 +6,100 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Pure function to render daily briefing (deterministic, no LLM)
+function renderDailyBriefing({
+  todayDisplay,
+  weatherInfo,
+  calendar,
+  tasks,
+  emailsUnread,
+  topUnreadEmails,
+  reminders,
+}: {
+  todayDisplay: string;
+  weatherInfo: { city: string; highC: string; lowC: string; description: string; humidity: string } | null;
+  calendar: Array<{ title: string; time: string; location?: string }>;
+  tasks: Array<{ title: string; due?: string | null }>;
+  emailsUnread: number;
+  topUnreadEmails: Array<{ subject: string; from: string }>;
+  reminders: Array<{ text: string; time: string }>;
+}): string {
+  let message = `🌅 *Good morning. Your Daily Briefing*\n\n`;
+  message += `Here's your briefing for today, ${todayDisplay}.\n\n`;
+
+  // 1. Weather (always show section)
+  if (weatherInfo) {
+    message += `🌤️ *Weather*: ${weatherInfo.city}, ${weatherInfo.highC}, ${weatherInfo.description}`;
+    if (weatherInfo.humidity) {
+      message += `, Humidity ${weatherInfo.humidity}`;
+    }
+    message += `.\n\n`;
+  } else {
+    message += `🌤️ *Weather*: No weather data available for today.\n\n`;
+  }
+
+  // 2. Calendar (always show section)
+  message += `📅 *Calendar*:`;
+  if (calendar.length > 0) {
+    message += `\n`;
+    calendar.forEach((event) => {
+      message += `• ${event.time} – ${event.title}`;
+      if (event.location) {
+        message += ` (${event.location})`;
+      }
+      message += `\n`;
+    });
+  } else {
+    message += ` No events on your calendar today.`;
+  }
+  message += `\n`;
+
+  // 3. Pending Tasks (always show section)
+  message += `✅ *Pending Tasks*:`;
+  if (tasks.length > 0) {
+    message += `\n`;
+    tasks.slice(0, 5).forEach((task, i) => {
+      message += `${i + 1}. ${task.title}`;
+      if (task.due) {
+        message += ` (due ${task.due})`;
+      }
+      message += `\n`;
+    });
+  } else {
+    message += ` You're all caught up – no pending tasks.`;
+  }
+  message += `\n`;
+
+  // 4. Emails (always show section)
+  message += `📧 *Emails*: You have ${emailsUnread} unread email${emailsUnread !== 1 ? 's' : ''}.`;
+  if (topUnreadEmails && topUnreadEmails.length > 0) {
+    message += `\n*Top unread:*\n`;
+    topUnreadEmails.forEach((email, i) => {
+      message += `${i + 1}. "${email.subject}" from ${email.from}\n`;
+    });
+  } else {
+    message += `\n`;
+  }
+  message += `\n`;
+
+  // 5. Reminders (always show section)
+  message += `⏰ *Reminders*:`;
+  if (reminders.length > 0) {
+    message += `\n`;
+    reminders.forEach((reminder) => {
+      message += `• ${reminder.time} – ${reminder.text}\n`;
+    });
+  } else {
+    message += ` No reminders scheduled for today.`;
+  }
+  message += `\n`;
+
+  // Sign-off
+  message += `\nHave a productive day.`;
+
+  return message;
+}
+
 async function getAccessToken(supabase: any, userId: string) {
   const { data: tokenData, error } = await supabase
     .from('oauth_tokens')
@@ -436,80 +530,24 @@ serve(async (req) => {
           }
         }
 
-        console.log(`[${traceId}] Daily briefing data summary: weather=${!!weatherInfo}, calendar=${briefingData.calendar.length}, tasks=${briefingData.tasks.length}, emailsUnread=${briefingData.emails}, reminders=${briefingData.reminders.length}`);
+        console.log(`[${traceId}] Daily briefing data summary: date=${todayDisplay}, weather=${!!weatherInfo}, calendar=${briefingData.calendar.length}, tasks=${briefingData.tasks.length}, emailsUnread=${briefingData.emails}, reminders=${briefingData.reminders.length}`);
 
-        // Generate AI-powered briefing with EXPLICIT DATE and STABLE SECTION ORDER
-        const briefingPrompt = `You are Man Friday, an executive assistant preparing a concise daily briefing for WhatsApp.
-
-TODAY'S DATE (USE THIS EXACT STRING IN YOUR OUTPUT): ${todayDisplay}
-
-Here is the structured data for today:
-
-Weather:
-${weatherInfo ? `City: ${userCity}, Temp: ${weatherInfo.temp} (Celsius), Condition: ${weatherInfo.condition}, Humidity: ${weatherInfo.humidity}` : 'No weather data.'}
-
-Calendar:
-${briefingData.calendar.length > 0
-  ? briefingData.calendar.map((e: any) => `- ${e.time}: ${e.title}${e.location ? ` (${e.location})` : ''}`).join('\n')
-  : 'No events today.'}
-
-Tasks:
-${briefingData.tasks.length > 0
-  ? briefingData.tasks.slice(0, 5).map((t: any) => `- ${t.title}${t.due ? ` (due ${t.due})` : ''}`).join('\n')
-  : 'No pending tasks.'}
-
-Emails:
-Unread count: ${briefingData.emails ?? 'unknown'}
-Top unread:
-${briefingData.topUnreadEmails && briefingData.topUnreadEmails.length > 0
-  ? briefingData.topUnreadEmails.slice(0, 3).map((e: any, i: number) => `${i + 1}. "${e.subject}" from ${e.from}`).join('\n')
-  : 'No individual emails to highlight.'}
-
-Reminders:
-${briefingData.reminders.length > 0
-  ? briefingData.reminders.map((r: any) => `- ${r.time}: ${r.text}`).join('\n')
-  : 'No reminders today.'}
-
-CRITICAL OUTPUT RULES:
-- First line must be a short greeting and the title "Your Daily Briefing" (e.g., "🌅 Good morning. Your Daily Briefing").
-- Second line must say: "Here’s your briefing for today, ${todayDisplay}." (use this exact string, do NOT change the date).
-- After that, ALWAYS include sections in this exact order with headings and emojis:
-  1) Weather (🌤️)
-  2) Calendar (📅)
-  3) Pending Tasks (✅)
-  4) Emails (📧)
-  5) Reminders (⏰)
-- If a section has no data, STILL show the heading and explicitly say that (e.g. "No events on your calendar today.").
-- Use Celsius (°C) for temperatures and IST times in 12-hour format with AM/PM.
-- Keep the briefing under about 1500 characters.
-- Be clear and concise, like a capable human assistant, not overly enthusiastic.`;
-
-        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [
-              { 
-                role: 'system', 
-                content: `You are Man Friday, a professional executive assistant creating morning briefings. Be clear, actionable, and concise. CRITICAL: Always use Celsius (°C) for temperatures and IST for times. Keep a professional but warm tone without being overly cheerful. NEVER invent or change the date provided to you - use it exactly as given.` 
-              },
-              { role: 'user', content: briefingPrompt }
-            ],
-            temperature: 0.3,
-            max_tokens: 400,
-          }),
+        // Build briefing message deterministically (no LLM)
+        const briefingMessage = renderDailyBriefing({
+          todayDisplay,
+          weatherInfo: weatherInfo ? {
+            city: userCity,
+            highC: weatherInfo.temp,
+            lowC: '',
+            description: weatherInfo.condition,
+            humidity: weatherInfo.humidity
+          } : null,
+          calendar: briefingData.calendar,
+          tasks: briefingData.tasks,
+          emailsUnread: briefingData.emails,
+          topUnreadEmails: briefingData.topUnreadEmails,
+          reminders: briefingData.reminders
         });
-
-        if (!aiResponse.ok) {
-          throw new Error('AI briefing generation failed');
-        }
-
-        const aiData = await aiResponse.json();
-        const briefingMessage = `☀️ **Good Morning! Your Daily Briefing**\n\n${aiData.choices[0].message.content}`;
 
         console.log(`[${traceId}] Generated briefing (${briefingMessage.length} chars): ${briefingMessage.substring(0, 200)}...`);
 

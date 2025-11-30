@@ -920,14 +920,17 @@ serve(async (req) => {
     // REST / NEXT PAGE phrases: "show me the rest", "show me more", "balance tasks", etc.
     else if (
       msgLowerTasks.includes('show me the rest') ||
+      msgLowerTasks.includes('show the rest') ||
       msgLowerTasks.includes('show rest') ||
       msgLowerTasks.includes('show me more') ||
       msgLowerTasks.includes('show more tasks') ||
       msgLowerTasks.includes('show more') ||
+      msgLowerTasks.includes('more tasks') ||
       msgLowerTasks.includes('show remaining tasks') ||
       msgLowerTasks.includes('remaining tasks') ||
       msgLowerTasks.includes('the other tasks') ||
       msgLowerTasks.includes('the other 10 tasks') ||
+      msgLowerTasks.includes('the other 15 tasks') ||
       msgLowerTasks.includes('the other 34 tasks') ||
       msgLowerTasks.includes('the other ') ||
       msgLowerTasks.includes('balance tasks') ||
@@ -937,7 +940,7 @@ serve(async (req) => {
       msgLowerTasks.includes('rest of tasks') ||
       msgLowerTasks.includes('which are the ')
     ) {
-      console.log(`[${traceId}] 📋 ROUTING: "Show rest of tasks" detected from: "${finalMessage}"`);
+      console.log(`[${traceId}] 📋 ROUTING: "Show rest/more tasks" matched for: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: true };
     }
     // INITIAL VIEW phrases: "what tasks do I have", "what tasks are pending", "show my tasks"
