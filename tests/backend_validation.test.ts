@@ -320,13 +320,22 @@ describe('Backend Critical Flows', () => {
         return { startIndex: 0, endIndex, remaining };
       }
 
-      // mode === 'rest': use lastEndIndex if available, otherwise fallback to 10 (i.e. show 11-20)
-      const effectiveLastEnd = lastEndIndex && lastEndIndex < totalTasks ? lastEndIndex : 10;
-      const startIndex = effectiveLastEnd; // 0-based
-      const displayLimit = Math.min(10, Math.max(0, totalTasks - effectiveLastEnd));
-      const endIndex = startIndex + displayLimit;
-      const remaining = Math.max(0, totalTasks - endIndex);
-      return { startIndex, endIndex, remaining };
+      // mode === 'rest': use lastEndIndex (1-based) to continue from next task
+      if (lastEndIndex && lastEndIndex < totalTasks) {
+        const nextStart = lastEndIndex + 1; // 1-based index
+        const startIndex = nextStart - 1; // 0-based array index
+        const displayLimit = Math.min(10, totalTasks - startIndex);
+        const endIndex = startIndex + displayLimit;
+        const remaining = Math.max(0, totalTasks - endIndex);
+        return { startIndex, endIndex, remaining };
+      } else {
+        // Fallback: assume initial was 1-10
+        const startIndex = 10;
+        const displayLimit = Math.min(10, Math.max(0, totalTasks - 10));
+        const endIndex = startIndex + displayLimit;
+        const remaining = Math.max(0, totalTasks - endIndex);
+        return { startIndex, endIndex, remaining };
+      }
     }
 
     it('initial view should show first 10 with footer when more exist', () => {
@@ -362,6 +371,185 @@ describe('Backend Critical Flows', () => {
       expect(startIndex).toBe(0);
       expect(endIndex).toBe(44);
       expect(remaining).toBe(0);
+    });
+  });
+
+  describe('Daily Briefing Renderer', () => {
+    // Mock render function matching the one in daily-briefing edge function
+    function renderDailyBriefing({
+      todayDisplay,
+      weatherInfo,
+      calendar,
+      tasks,
+      emailsUnread,
+      topUnreadEmails,
+      reminders,
+    }: {
+      todayDisplay: string;
+      weatherInfo: { city: string; highC: string; lowC: string; description: string; humidity: string } | null;
+      calendar: Array<{ title: string; time: string; location?: string }>;
+      tasks: Array<{ title: string; due?: string | null }>;
+      emailsUnread: number;
+      topUnreadEmails: Array<{ subject: string; from: string }>;
+      reminders: Array<{ text: string; time: string }>;
+    }): string {
+      let message = `🌅 *Good morning. Your Daily Briefing*\n\n`;
+      message += `Here's your briefing for today, ${todayDisplay}.\n\n`;
+
+      // Weather
+      if (weatherInfo) {
+        message += `🌤️ *Weather*: ${weatherInfo.city}, ${weatherInfo.highC}, ${weatherInfo.description}`;
+        if (weatherInfo.humidity) {
+          message += `, Humidity ${weatherInfo.humidity}`;
+        }
+        message += `.\n\n`;
+      } else {
+        message += `🌤️ *Weather*: No weather data available for today.\n\n`;
+      }
+
+      // Calendar
+      message += `📅 *Calendar*:`;
+      if (calendar.length > 0) {
+        message += `\n`;
+        calendar.forEach((event) => {
+          message += `• ${event.time} – ${event.title}`;
+          if (event.location) {
+            message += ` (${event.location})`;
+          }
+          message += `\n`;
+        });
+      } else {
+        message += ` No events on your calendar today.`;
+      }
+      message += `\n`;
+
+      // Tasks
+      message += `✅ *Pending Tasks*:`;
+      if (tasks.length > 0) {
+        message += `\n`;
+        tasks.slice(0, 5).forEach((task, i) => {
+          message += `${i + 1}. ${task.title}`;
+          if (task.due) {
+            message += ` (due ${task.due})`;
+          }
+          message += `\n`;
+        });
+      } else {
+        message += ` You're all caught up – no pending tasks.`;
+      }
+      message += `\n`;
+
+      // Emails
+      message += `📧 *Emails*: You have ${emailsUnread} unread email${emailsUnread !== 1 ? 's' : ''}.`;
+      if (topUnreadEmails && topUnreadEmails.length > 0) {
+        message += `\n*Top unread:*\n`;
+        topUnreadEmails.forEach((email, i) => {
+          message += `${i + 1}. "${email.subject}" from ${email.from}\n`;
+        });
+      } else {
+        message += `\n`;
+      }
+      message += `\n`;
+
+      // Reminders
+      message += `⏰ *Reminders*:`;
+      if (reminders.length > 0) {
+        message += `\n`;
+        reminders.forEach((reminder) => {
+          message += `• ${reminder.time} – ${reminder.text}\n`;
+        });
+      } else {
+        message += ` No reminders scheduled for today.`;
+      }
+      message += `\n`;
+
+      message += `\nHave a productive day.`;
+
+      return message;
+    }
+
+    it('should render full briefing with all sections present', () => {
+      const todayDisplay = 'Saturday, 30 November 2025';
+      const briefing = renderDailyBriefing({
+        todayDisplay,
+        weatherInfo: { city: 'Mumbai', highC: '32°C', lowC: '26°C', description: 'Sunny', humidity: '60%' },
+        calendar: [
+          { title: 'Team Meeting', time: '10:00 AM', location: 'Office' },
+          { title: 'Client Call', time: '3:00 PM' }
+        ],
+        tasks: [
+          { title: 'Review budget', due: 'Dec 1' },
+          { title: 'Call supplier', due: null }
+        ],
+        emailsUnread: 42,
+        topUnreadEmails: [
+          { subject: 'Q4 Report', from: 'boss@company.com' }
+        ],
+        reminders: [
+          { text: 'Doctor appointment', time: '4:00 PM' }
+        ]
+      });
+
+      // Verify date is included exactly once
+      expect(briefing).toContain(todayDisplay);
+      const dateOccurrences = briefing.split(todayDisplay).length - 1;
+      expect(dateOccurrences).toBe(1);
+
+      // Verify all 5 section headings are present
+      expect(briefing).toContain('🌤️ *Weather*');
+      expect(briefing).toContain('📅 *Calendar*');
+      expect(briefing).toContain('✅ *Pending Tasks*');
+      expect(briefing).toContain('📧 *Emails*');
+      expect(briefing).toContain('⏰ *Reminders*');
+
+      // Verify actual data is shown
+      expect(briefing).toContain('Mumbai');
+      expect(briefing).toContain('Team Meeting');
+      expect(briefing).toContain('Review budget');
+      expect(briefing).toContain('42 unread emails');
+      expect(briefing).toContain('Doctor appointment');
+    });
+
+    it('should show all section headings even when some sections are empty', () => {
+      const todayDisplay = 'Saturday, 30 November 2025';
+      const briefing = renderDailyBriefing({
+        todayDisplay,
+        weatherInfo: null,
+        calendar: [],
+        tasks: [],
+        emailsUnread: 0,
+        topUnreadEmails: [],
+        reminders: []
+      });
+
+      // All section headings must still be present
+      expect(briefing).toContain('🌤️ *Weather*');
+      expect(briefing).toContain('📅 *Calendar*');
+      expect(briefing).toContain('✅ *Pending Tasks*');
+      expect(briefing).toContain('📧 *Emails*');
+      expect(briefing).toContain('⏰ *Reminders*');
+
+      // Verify empty state messages
+      expect(briefing).toContain('No weather data available');
+      expect(briefing).toContain('No events on your calendar today');
+      expect(briefing).toContain('all caught up');
+      expect(briefing).toContain('0 unread emails');
+      expect(briefing).toContain('No reminders scheduled');
+    });
+
+    it('should use the exact date string provided without modification', () => {
+      const todayDisplay = 'Monday, 2 December 2025';
+      const briefing = renderDailyBriefing({
+        todayDisplay,
+        weatherInfo: null,
+        calendar: [],
+        tasks: [],
+        emailsUnread: 0,
+        topUnreadEmails: [],
+        reminders: []
+      });
+
+      expect(briefing).toContain(`Here's your briefing for today, ${todayDisplay}.`);
     });
   });
 });

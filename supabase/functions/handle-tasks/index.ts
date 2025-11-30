@@ -366,12 +366,9 @@ serve(async (req) => {
       let totalTasks = allTasksSnapshot.length;
       let pagingState = sessionRow?.tasks_paging as any | null;
       
-      console.log(`[${traceId}] Loaded tasks snapshot from session_state: count=${totalTasks}`);
-      if (pagingState) {
-        console.log(`[${traceId}] Loaded paging state: last_start_index=${pagingState.last_start_index}, last_end_index=${pagingState.last_end_index}, total=${pagingState.total}`);
-      }
+      console.log(`[${traceId}] Tasks paging: mode=${showAll ? 'all' : showRest ? 'rest' : 'initial'}, total=${totalTasks}, pagingState=${JSON.stringify(pagingState)}`);
       
-      // If no snapshot exists yet, fetch tasks from Google Tasks and build snapshot
+      // Only fetch from Google Tasks if no snapshot exists
       if (!allTasksSnapshot || allTasksSnapshot.length === 0) {
         console.log(`[${traceId}] No existing snapshot, fetching tasks from Google Tasks`);
         
@@ -470,64 +467,62 @@ serve(async (req) => {
       if (totalTasks === 0) {
         message = '✅ No pending tasks. You\'re all caught up!';
       } else {
-        // Determine paging slice based on view type and previous paging state
+        // Strictly state-based paging logic
         let displayLimit: number;
-        let startIndex: number; // 0-based
+        let startIndex: number; // 0-based array index
         
         if (showAll) {
-          // FULL LIST
-          displayLimit = totalTasks;
+          // SHOW ALL: Always return full list
           startIndex = 0;
-          console.log(`[${traceId}] SHOW ALL MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
+          displayLimit = totalTasks;
         } else if (showRest) {
-          // NEXT PAGE based on last_end_index from paging state
-          const lastEndIndex = pagingState?.last_end_index as number | undefined;
-          if (lastEndIndex && lastEndIndex < totalTasks) {
-            // Continue from where we left off
-            startIndex = lastEndIndex; // convert 1-based to 0-based
-            displayLimit = Math.min(10, totalTasks - lastEndIndex);
-            console.log(`[${traceId}] SHOW REST MODE (from paging): last_end_index=${lastEndIndex}, startIndex=${startIndex}, displayLimit=${displayLimit}, totalTasks=${totalTasks}`);
+          // SHOW REST: Use paging state to continue from where we left off
+          if (pagingState && pagingState.total === totalTasks && pagingState.last_end_index < totalTasks) {
+            // Valid paging state: continue from last_end_index
+            const nextStart = pagingState.last_end_index + 1; // 1-based index of next task
+            startIndex = nextStart - 1; // Convert to 0-based array index
+            displayLimit = Math.min(10, totalTasks - startIndex);
           } else {
-            // Fallback: assume first page was 1-10, so show 11-20
+            // No valid paging state: assume initial view was 1-10, show 11-20
             startIndex = 10;
             displayLimit = Math.min(10, Math.max(0, totalTasks - 10));
-            console.log(`[${traceId}] SHOW REST MODE (fallback): startIndex=${startIndex}, displayLimit=${displayLimit}, totalTasks=${totalTasks}`);
           }
         } else {
-          // INITIAL VIEW
-          displayLimit = Math.min(10, totalTasks);
-          startIndex = 0;
-          console.log(`[${traceId}] INITIAL MODE: displayLimit=${displayLimit}, startIndex=${startIndex}, totalTasks=${totalTasks}`);
+          // INITIAL VIEW: Always start from beginning
+          // Reset paging if previous state was for show_all or if total changed
+          if (!pagingState || pagingState.total !== totalTasks || pagingState.last_end_index >= totalTasks) {
+            startIndex = 0;
+            displayLimit = Math.min(10, totalTasks);
+          } else {
+            // Valid paging state exists but initial view requested: restart from beginning
+            startIndex = 0;
+            displayLimit = Math.min(10, totalTasks);
+          }
         }
         
         const endIndex = Math.min(startIndex + displayLimit, totalTasks);
         const tasksToShow = allTasksSnapshot.slice(startIndex, endIndex);
         
-        console.log(`[${traceId}] Slicing: allTasksSnapshot.length=${allTasksSnapshot.length}, startIndex=${startIndex}, endIndex=${endIndex}, tasksToShow.length=${tasksToShow.length}`);
+        console.log(`[${traceId}] Tasks paging slice: startIndex=${startIndex}, endIndex=${endIndex}, tasksToShow=${tasksToShow.length}`);
         
-        // Update paging state in session_state for next calls
+        // Update paging state using 1-based indices from snapshot
         const newPagingState = {
           total: totalTasks,
-          last_start_index: tasksToShow.length > 0 ? tasksToShow[0].index : 0,
+          last_start_index: tasksToShow.length > 0 ? tasksToShow[0].index : 1,
           last_end_index: tasksToShow.length > 0 ? tasksToShow[tasksToShow.length - 1].index : 0,
           updated_at: new Date().toISOString()
         };
         
+        // Only update session_state, preserve snapshot
         await supabase
           .from('session_state')
-          .upsert({
-            user_id: userId,
-            tasks_snapshot: {
-              list: allTasksSnapshot,
-              timestamp: new Date().toISOString()
-            },
+          .update({
             tasks_paging: newPagingState,
             updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'user_id'
-          });
+          })
+          .eq('user_id', userId);
         
-        console.log(`[${traceId}] Updated tasks paging state: last_start_index=${newPagingState.last_start_index}, last_end_index=${newPagingState.last_end_index}, total=${newPagingState.total}`);
+        console.log(`[${traceId}] Tasks paging updated: last_start_index=${newPagingState.last_start_index}, last_end_index=${newPagingState.last_end_index}, total=${newPagingState.total}`);
   
         // Header depends on view type
         if (showRest) {
