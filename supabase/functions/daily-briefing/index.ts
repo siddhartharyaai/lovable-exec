@@ -160,8 +160,6 @@ serve(async (req) => {
     } else {
       tokensQuery = tokensQuery.eq('users.daily_briefing_enabled', true);
     }
-      tokensQuery = tokensQuery.eq('users.daily_briefing_enabled', true);
-    }
 
     const { data: tokens, error: tokenError } = await tokensQuery;
 
