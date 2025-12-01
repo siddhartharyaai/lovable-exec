@@ -898,61 +898,102 @@ serve(async (req) => {
       console.log(`[${traceId}] 📝 Slot-filling mode active for topic: ${currentTopic}. Treating message as slot value.`);
     }
     
+    // ============= DAILY BRIEFING ROUTING: Explicit phrase detection BEFORE AI call =============
+    // Using existing msgLower from line 752
+    const briefingPhrases = [
+      'briefing', 
+      'give me my briefing', 
+      'show my briefing',
+      'give me my daily briefing',
+      'show my daily briefing',
+      'daily briefing',
+      'morning briefing',
+      'briefing today',
+      'my briefing today',
+      'give me briefing',
+      'send me my briefing'
+    ];
+    
+    if (briefingPhrases.some(phrase => msgLower.includes(phrase))) {
+      console.log(`[${traceId}] 📅 ROUTING: Daily briefing request detected from: "${finalMessage}"`);
+      
+      // Invoke daily-briefing function directly
+      const briefingResult = await supabase.functions.invoke('daily-briefing', {
+        body: {
+          userId,
+          traceId,
+          isManualTrigger: true  // This is a user-initiated briefing
+        }
+      });
+      
+      if (briefingResult.error) {
+        console.error(`[${traceId}] Daily briefing error:`, briefingResult.error);
+        const message = `I tried to generate your briefing but encountered an error. Please try again.`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      const message = briefingResult.data?.message || 'Your briefing is ready but I encountered an issue formatting it.';
+      return new Response(JSON.stringify({ message }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     // ============= TASKS ROUTING: Explicit phrase detection BEFORE AI call =============
-    const msgLowerTasks = finalMessage.toLowerCase();
     let tasksRouting: { action: string; show_all: boolean; show_rest: boolean } | null = null;
     
     // FULL LIST phrases: "show me all tasks", "show all 44", "give me all tasks", etc.
     if (
-      msgLowerTasks.includes('show me all tasks') ||
-      msgLowerTasks.includes('show all tasks') ||
-      msgLowerTasks.includes('give me all tasks') ||
-      msgLowerTasks.includes('all pending tasks') ||
-      msgLowerTasks.includes('give me the full list of tasks') ||
-      msgLowerTasks.includes('list all my tasks') ||
+      msgLower.includes('show me all tasks') ||
+      msgLower.includes('show all tasks') ||
+      msgLower.includes('give me all tasks') ||
+      msgLower.includes('all pending tasks') ||
+      msgLower.includes('give me the full list of tasks') ||
+      msgLower.includes('list all my tasks') ||
       // Broad catch for variants like "show all 44", "show all my tasks"
-      (msgLowerTasks.includes('show all') && msgLowerTasks.includes('task')) ||
-      (msgLowerTasks.includes('all pending') && msgLowerTasks.includes('task'))
+      (msgLower.includes('show all') && msgLower.includes('task')) ||
+      (msgLower.includes('all pending') && msgLower.includes('task'))
     ) {
       console.log(`[${traceId}] 📋 ROUTING: "Show all tasks" detected from: "${finalMessage}"`);
       tasksRouting = { action: 'read_all', show_all: true, show_rest: false };
     }
     // REST / NEXT PAGE phrases: "show me the rest", "show me more", "balance tasks", etc.
     else if (
-      msgLowerTasks.includes('show me the rest') ||
-      msgLowerTasks.includes('show the rest') ||
-      msgLowerTasks.includes('show rest') ||
-      msgLowerTasks.includes('show me more') ||
-      msgLowerTasks.includes('show more tasks') ||
-      msgLowerTasks.includes('show more') ||
-      msgLowerTasks.includes('more tasks') ||
-      msgLowerTasks.includes('show remaining tasks') ||
-      msgLowerTasks.includes('remaining tasks') ||
-      msgLowerTasks.includes('the other tasks') ||
-      msgLowerTasks.includes('the other 10 tasks') ||
-      msgLowerTasks.includes('the other 15 tasks') ||
-      msgLowerTasks.includes('the other 34 tasks') ||
-      msgLowerTasks.includes('the other ') ||
-      msgLowerTasks.includes('balance tasks') ||
-      msgLowerTasks.includes('balance pending tasks') ||
-      msgLowerTasks.includes('balance pending') ||
-      msgLowerTasks.includes('rest of the tasks') ||
-      msgLowerTasks.includes('rest of tasks') ||
-      msgLowerTasks.includes('which are the ')
+      msgLower.includes('show me the rest') ||
+      msgLower.includes('show the rest') ||
+      msgLower.includes('show rest') ||
+      msgLower.includes('show me more') ||
+      msgLower.includes('show more tasks') ||
+      msgLower.includes('show more') ||
+      msgLower.includes('more tasks') ||
+      msgLower.includes('show remaining tasks') ||
+      msgLower.includes('remaining tasks') ||
+      msgLower.includes('the other tasks') ||
+      msgLower.includes('the other 10 tasks') ||
+      msgLower.includes('the other 15 tasks') ||
+      msgLower.includes('the other 34 tasks') ||
+      msgLower.includes('the other ') ||
+      msgLower.includes('balance tasks') ||
+      msgLower.includes('balance pending tasks') ||
+      msgLower.includes('balance pending') ||
+      msgLower.includes('rest of the tasks') ||
+      msgLower.includes('rest of tasks') ||
+      msgLower.includes('which are the ')
     ) {
       console.log(`[${traceId}] 📋 ROUTING: "Show rest/more tasks" matched for: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: true };
     }
     // INITIAL VIEW phrases: "what tasks do I have", "what tasks are pending", "show my tasks"
     else if (
-      (msgLowerTasks.includes('what tasks') && msgLowerTasks.includes('pending')) ||
-      msgLowerTasks.includes('what tasks do i have') ||
-      msgLowerTasks.includes('what tasks do i') ||
-      msgLowerTasks.includes('what tasks are pending') ||
-      msgLowerTasks.includes('show my tasks') ||
-      msgLowerTasks.includes('pending tasks') ||
-      msgLowerTasks.includes('what are my tasks') ||
-      msgLowerTasks.includes('what tasks do i have today')
+      (msgLower.includes('what tasks') && msgLower.includes('pending')) ||
+      msgLower.includes('what tasks do i have') ||
+      msgLower.includes('what tasks do i') ||
+      msgLower.includes('what tasks are pending') ||
+      msgLower.includes('show my tasks') ||
+      msgLower.includes('pending tasks') ||
+      msgLower.includes('what are my tasks') ||
+      msgLower.includes('what tasks do i have today')
     ) {
       console.log(`[${traceId}] 📋 ROUTING: Initial task query detected (default view) from: "${finalMessage}"`);
       tasksRouting = { action: 'read', show_all: false, show_rest: false };

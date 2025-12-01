@@ -144,8 +144,8 @@ serve(async (req) => {
 
     // Check if this is a manual trigger for a specific user
     const requestBody = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
-    const isManualTrigger = requestBody?.manualTrigger === true;
-    const specificUserId = requestBody?.specificUserId;
+    const isManualTrigger = requestBody?.isManualTrigger === true || requestBody?.manualTrigger === true;
+    const specificUserId = requestBody?.userId || requestBody?.specificUserId;
 
     // Get all users with Google OAuth tokens (filter by specific user if manual trigger)
     let tokensQuery = supabase
@@ -158,6 +158,8 @@ serve(async (req) => {
       console.log(`[${traceId}] Manual trigger for user ${specificUserId}`);
       tokensQuery = tokensQuery.eq('user_id', specificUserId);
     } else {
+      tokensQuery = tokensQuery.eq('users.daily_briefing_enabled', true);
+    }
       tokensQuery = tokensQuery.eq('users.daily_briefing_enabled', true);
     }
 
@@ -551,7 +553,18 @@ serve(async (req) => {
 
         console.log(`[${traceId}] Generated briefing (${briefingMessage.length} chars): ${briefingMessage.substring(0, 200)}...`);
 
-        // Send briefing via WhatsApp
+        // If manual trigger, return message directly; otherwise send via WhatsApp
+        if (isManualTrigger) {
+          console.log(`[${traceId}] Manual trigger - returning briefing message to ai-agent`);
+          return new Response(JSON.stringify({ 
+            message: briefingMessage,
+            success: true
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Send briefing via WhatsApp (cron trigger)
         const { error: sendError } = await supabase.functions.invoke('send-whatsapp', {
           body: { userId: tokenData.user_id, message: briefingMessage, traceId }
         });
