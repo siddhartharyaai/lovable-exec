@@ -63,7 +63,18 @@ serve(async (req) => {
       );
 
       if (!listResponse.ok) {
-        throw new Error('Failed to fetch task lists');
+        const errorBody = await listResponse.text();
+        console.error(`[${traceId}] ❌ Google Tasks API error (create action): status=${listResponse.status}`);
+        console.error(`[${traceId}] Response body:`, errorBody);
+        
+        message = `I couldn't create the task (error ${listResponse.status}). `;
+        if (listResponse.status === 401 || listResponse.status === 403) {
+          message += `Please ensure your Google Tasks account is connected.`;
+        }
+        
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       const listData = await listResponse.json();
@@ -226,7 +237,18 @@ serve(async (req) => {
       );
 
       if (!listResponse.ok) {
-        throw new Error('Failed to fetch task lists');
+        const errorBody = await listResponse.text();
+        console.error(`[${traceId}] ❌ Google Tasks API error (complete action): status=${listResponse.status}`);
+        console.error(`[${traceId}] Response body:`, errorBody);
+        
+        message = `I couldn't access your tasks to complete it (error ${listResponse.status}). `;
+        if (listResponse.status === 401 || listResponse.status === 403) {
+          message += `Please ensure your Google Tasks account is connected.`;
+        }
+        
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       const listData = await listResponse.json();
@@ -381,7 +403,20 @@ serve(async (req) => {
         );
   
         if (!listResponse.ok) {
-          throw new Error('Failed to fetch task lists');
+          const errorBody = await listResponse.text();
+          console.error(`[${traceId}] ❌ Google Tasks API error: status=${listResponse.status}, url=/users/@me/lists`);
+          console.error(`[${traceId}] Response body:`, errorBody);
+          
+          message = `I couldn't access your tasks right now (error ${listResponse.status}). `;
+          if (listResponse.status === 401 || listResponse.status === 403) {
+            message += `Please ensure your Google Tasks account is connected and I have permission to access it.`;
+          } else {
+            message += `Please try again in a moment.`;
+          }
+          
+          return new Response(JSON.stringify({ message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
   
         const listData = await listResponse.json();
