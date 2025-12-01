@@ -303,6 +303,137 @@ describe('Backend Critical Flows', () => {
     });
   });
 
+  // Pure routing helper for ai-agent special intents (no Supabase/LLM)
+  type SpecialRoute =
+    | { type: 'briefing' }
+    | { type: 'tasks'; action: 'read' | 'read_all'; show_all: boolean; show_rest: boolean }
+    | { type: 'none' };
+
+  function routeSpecialIntents(message: string): SpecialRoute {
+    const msgLower = message.toLowerCase();
+
+    const briefingPhrases = [
+      'briefing',
+      'give me my briefing',
+      'show my briefing',
+      'give me my daily briefing',
+      'show my daily briefing',
+      'daily briefing',
+      'morning briefing',
+      'briefing today',
+      'my briefing today',
+      'give me briefing',
+      'send me my briefing',
+    ];
+
+    if (briefingPhrases.some((phrase) => msgLower.includes(phrase))) {
+      return { type: 'briefing' };
+    }
+
+    // Tasks: full list
+    if (
+      msgLower.includes('show me all tasks') ||
+      msgLower.includes('show all tasks') ||
+      msgLower.includes('give me all tasks') ||
+      msgLower.includes('all pending tasks') ||
+      msgLower.includes('give me the full list of tasks') ||
+      msgLower.includes('list all my tasks') ||
+      (msgLower.includes('show all') && msgLower.includes('task')) ||
+      (msgLower.includes('all pending') && msgLower.includes('task'))
+    ) {
+      return { type: 'tasks', action: 'read_all', show_all: true, show_rest: false };
+    }
+
+    // Tasks: rest / next page
+    if (
+      msgLower.includes('show me the rest') ||
+      msgLower.includes('show the rest') ||
+      msgLower.includes('show rest') ||
+      msgLower.includes('show me more') ||
+      msgLower.includes('show more tasks') ||
+      msgLower.includes('show more') ||
+      msgLower.includes('more tasks') ||
+      msgLower.includes('show remaining tasks') ||
+      msgLower.includes('remaining tasks') ||
+      msgLower.includes('the other tasks') ||
+      msgLower.includes('the other 10 tasks') ||
+      msgLower.includes('the other 15 tasks') ||
+      msgLower.includes('the other 34 tasks') ||
+      msgLower.includes('the other ') ||
+      msgLower.includes('balance tasks') ||
+      msgLower.includes('balance pending tasks') ||
+      msgLower.includes('balance pending') ||
+      msgLower.includes('rest of the tasks') ||
+      msgLower.includes('rest of tasks') ||
+      msgLower.includes('which are the ')
+    ) {
+      return { type: 'tasks', action: 'read', show_all: false, show_rest: true };
+    }
+
+    // Tasks: initial view
+    if (
+      (msgLower.includes('what tasks') && msgLower.includes('pending')) ||
+      msgLower.includes('what tasks do i have') ||
+      msgLower.includes('what tasks do i') ||
+      msgLower.includes('what tasks are pending') ||
+      msgLower.includes('show my tasks') ||
+      msgLower.includes('pending tasks') ||
+      msgLower.includes('what are my tasks') ||
+      msgLower.includes('what tasks do i have today')
+    ) {
+      return { type: 'tasks', action: 'read', show_all: false, show_rest: false };
+    }
+
+    return { type: 'none' };
+  }
+
+  describe('AI Agent Routing (pure)', () => {
+    it('routes briefing phrases to briefing type', () => {
+      const variants = [
+        'Give me my briefing today',
+        'show my briefing today',
+        'daily briefing',
+        'send me my briefing',
+      ];
+
+      variants.forEach((msg) => {
+        const route = routeSpecialIntents(msg);
+        expect(route.type).toBe('briefing');
+      });
+    });
+
+    it('routes "what tasks do I have" to tasks read initial view', () => {
+      const route = routeSpecialIntents('What tasks do I have');
+      expect(route).toEqual({
+        type: 'tasks',
+        action: 'read',
+        show_all: false,
+        show_rest: false,
+      });
+    });
+
+    it('routes "show me all tasks" to tasks read_all', () => {
+      const route = routeSpecialIntents('show me all tasks');
+      expect(route).toEqual({
+        type: 'tasks',
+        action: 'read_all',
+        show_all: true,
+        show_rest: false,
+      });
+    });
+
+    it('routes "show me the rest" to tasks rest page', () => {
+      const route = routeSpecialIntents('show me the rest');
+      expect(route).toEqual({
+        type: 'tasks',
+        action: 'read',
+        show_all: false,
+        show_rest: true,
+      });
+    });
+  });
+
+
   describe('Tasks Paging Logic', () => {
     type PagingMode = 'initial' | 'rest' | 'all';
 
