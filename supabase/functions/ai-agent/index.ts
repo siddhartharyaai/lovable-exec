@@ -1016,7 +1016,8 @@ serve(async (req) => {
         }
       });
       
-      const message = tasksResult.data?.message || 'No tasks found';
+      const message = tasksResult.data?.message ??
+        `I couldn't access your tasks right now. Please try again in a moment.`;
       return new Response(JSON.stringify({ message }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -1607,7 +1608,8 @@ function extractEmailSlotsFromMessage(message: string, userName: string): { subj
                   action: args.show_all ? 'read_all' : 'read'
                 }
               });
-              result = readTasksResult.data?.message || 'No tasks found';
+              result = readTasksResult.data?.message ??
+                `I couldn't access your tasks right now. Please try again in a moment.`;
               break;
 
             case 'create_task':
