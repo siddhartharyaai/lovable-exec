@@ -15,7 +15,7 @@ async function getAccessToken(supabase: any, userId: string) {
     .single();
 
   if (error || !tokenData) {
-    throw new Error('Google account not connected');
+    throw new Error('OAUTH_NOT_CONNECTED');
   }
 
   // Check if token is expired
@@ -27,7 +27,7 @@ async function getAccessToken(supabase: any, userId: string) {
     });
     
     if (refreshResult.error || !refreshResult.data?.access_token) {
-      throw new Error('Failed to refresh token');
+      throw new Error('OAUTH_EXPIRED');
     }
     
     return refreshResult.data.access_token;
@@ -50,7 +50,22 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const accessToken = await getAccessToken(supabase, userId);
+    let accessToken;
+    try {
+      accessToken = await getAccessToken(supabase, userId);
+    } catch (tokenError) {
+      const errMsg = tokenError instanceof Error ? tokenError.message : 'Unknown error';
+      if (errMsg === 'OAUTH_NOT_CONNECTED' || errMsg === 'OAUTH_EXPIRED') {
+        console.error(`[${traceId}] OAuth error for user ${userId}: ${errMsg}`);
+        return new Response(JSON.stringify({ 
+          message: `⚠️ Your Google Calendar connection has expired. Please reconnect your Google account in settings.`
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      throw tokenError;
+    }
+    
     let message = '';
 
     switch (action) {
@@ -207,7 +222,7 @@ serve(async (req) => {
         console.log(`[${traceId}] Found ${events.length} events`);
 
         if (events.length === 0) {
-          message = '📅 No events found for the requested time period.';
+          message = '📅 You have no events scheduled for the requested time period.';
         } else {
           // Format date range for display
           const startDate = new Date(startTime);

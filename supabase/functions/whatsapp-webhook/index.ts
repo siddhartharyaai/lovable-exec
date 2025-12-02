@@ -239,41 +239,8 @@ serve(async (req) => {
     const userId = userData.id;
     console.log(`[${traceId}] User ID: ${userId}`);
 
-    // Handle manual briefing trigger
-    if (body.toLowerCase().includes('give me my briefing') || body.toLowerCase().includes('briefing now')) {
-      console.log(`[${traceId}] Manual briefing trigger detected`);
-      
-      try {
-        const briefingResult = await supabase.functions.invoke('daily-briefing', {
-          body: { manualTrigger: true, specificUserId: userId, traceId }
-        });
-        
-        if (briefingResult.error) {
-          console.error(`[${traceId}] Manual briefing failed:`, briefingResult.error);
-          await supabase.functions.invoke('send-whatsapp', {
-            body: { 
-              userId, 
-              message: "I had trouble generating your briefing right now. Please try again in a moment.", 
-              traceId 
-            }
-          });
-        } else {
-          console.log(`[${traceId}] Manual briefing sent successfully`);
-        }
-        
-        return new Response('OK', { status: 200 });
-      } catch (briefingError) {
-        console.error(`[${traceId}] Manual briefing exception:`, briefingError);
-        await supabase.functions.invoke('send-whatsapp', {
-          body: { 
-            userId, 
-            message: "I had trouble generating your briefing. Please try again.", 
-            traceId 
-          }
-        });
-        return new Response('OK', { status: 200 });
-      }
-    }
+    // REMOVED: Manual briefing trigger handler - all briefing requests now go through ai-agent
+    // This prevents duplicate briefing handling and ensures consistent routing
 
     // Phase 3: Language detection
     console.log(`[${traceId}] Detecting language...`);

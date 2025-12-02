@@ -109,7 +109,7 @@ async function getAccessToken(supabase: any, userId: string) {
     .single();
 
   if (error || !tokenData) {
-    return null;
+    throw new Error('OAUTH_NOT_CONNECTED');
   }
 
   const expiresAt = new Date(tokenData.expires_at);
@@ -119,7 +119,7 @@ async function getAccessToken(supabase: any, userId: string) {
     });
     
     if (refreshResult.error || !refreshResult.data?.access_token) {
-      return null;
+      throw new Error('OAUTH_EXPIRED');
     }
     
     return refreshResult.data.access_token;
@@ -175,12 +175,27 @@ serve(async (req) => {
 
     for (const tokenData of tokens) {
       try {
-        const accessToken = await getAccessToken(supabase, tokenData.user_id);
-        
-        if (!accessToken) {
-          console.log(`[${traceId}] No valid token for user ${tokenData.user_id}`);
-          failed++;
-          continue;
+        let accessToken;
+        try {
+          accessToken = await getAccessToken(supabase, tokenData.user_id);
+        } catch (tokenError) {
+          const errMsg = tokenError instanceof Error ? tokenError.message : 'Unknown error';
+          if (errMsg === 'OAUTH_NOT_CONNECTED' || errMsg === 'OAUTH_EXPIRED') {
+            console.log(`[${traceId}] Token issue for user ${tokenData.user_id}: ${errMsg}`);
+            // For manual trigger, return user-friendly error
+            if (isManualTrigger) {
+              return new Response(JSON.stringify({ 
+                message: `⚠️ Your Google account connection has expired or is not set up. Please reconnect your Google account in settings to receive briefings.`,
+                success: false,
+                error: errMsg
+              }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+            failed++;
+            continue;
+          }
+          throw tokenError;
         }
 
         // Verify Gmail account being used
