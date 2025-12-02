@@ -40,6 +40,7 @@ YOUR JOB:
 
 POSSIBLE INTENT TYPES:
 - "email_action": ANY message containing email verbs (ABSOLUTE HIGHEST PRIORITY)
+- "daily_briefing": user requesting their daily briefing ("give me my briefing", "show my briefing", "briefing today", "daily briefing")
 - "confirmation_yes": yes / yup / okay send / do it / go ahead / confirmed / sure / absolutely / please do (NEVER "hi" or "hello")
 - "confirmation_no": no / don't / cancel / stop / never mind / nope / not now
 - "doc_action": user asking to act on last_doc ("summarize this", "clean this up", "extract tasks", "what does this say")
@@ -148,7 +149,7 @@ Classify this message into one of the intent types.`;
               properties: {
                 intent_type: {
                   type: "string",
-                  enum: ["confirmation_yes", "confirmation_no", "doc_action", "simple_reminder", "greeting_smalltalk", "handoff_to_orchestrator"]
+                  enum: ["email_action", "daily_briefing", "confirmation_yes", "confirmation_no", "doc_action", "simple_reminder", "greeting_smalltalk", "handoff_to_orchestrator"]
                 },
                 confidence: { type: "number", minimum: 0, maximum: 1 },
                 reason: { type: "string", maxLength: 100 }

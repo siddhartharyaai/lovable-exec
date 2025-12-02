@@ -1406,7 +1406,7 @@ function extractEmailSlotsFromMessage(message: string, userName: string): { subj
                   action: 'read'
                 }
               });
-              result = readCalResult.data?.message || 'No events found';
+              result = readCalResult.data?.message || 'I couldn\'t access your calendar right now. Please try again in a moment.';
               break;
 
             case 'create_calendar_event':
