@@ -710,3 +710,258 @@ describe('Backend Critical Flows', () => {
  *    - Verify status is updated to 'sent'
  *    - Verify subsequent cron runs don't re-send
  */
+
+// ============= CENTRALIZED ROUTER MODULE TESTS =============
+// These tests validate the pure routing functions from _shared/router.ts
+
+describe('Centralized Router Module', () => {
+  // Replicate router functions for testing (since we can't import Deno modules in Vitest)
+  type RouteDecision = 
+    | { type: 'daily_briefing' }
+    | { type: 'tasks'; action: 'read' | 'read_all'; showAll: boolean; showRest: boolean }
+    | { type: 'calendar_read' }
+    | { type: 'calendar_create' }
+    | { type: 'calendar_update' }
+    | { type: 'calendar_delete' }
+    | { type: 'gmail_check' }
+    | { type: 'gmail_search' }
+    | { type: 'gmail_mark_read' }
+    | { type: 'reminder_create' }
+    | { type: 'reminder_snooze' }
+    | { type: 'none' };
+
+  function matchesBriefingPhrases(msg: string): boolean {
+    const briefingPhrases = [
+      'briefing', 'give me my briefing', 'show my briefing', 'give me my daily briefing',
+      'show my daily briefing', 'daily briefing', 'morning briefing', 'briefing today',
+      'my briefing today', 'give me briefing', 'send me my briefing', 'get my briefing',
+      'what\'s my briefing', 'whats my briefing', 'daily update', 'morning update',
+      'daily summary', 'morning summary'
+    ];
+    return briefingPhrases.some(phrase => msg.includes(phrase));
+  }
+
+  function matchesTasksPhrases(msg: string): RouteDecision | null {
+    const showAllPhrases = [
+      'show me all tasks', 'show all tasks', 'give me all tasks', 'all pending tasks',
+      'give me the full list of tasks', 'list all my tasks', 'full list of tasks',
+      'complete list of tasks', 'entire task list', 'all my tasks'
+    ];
+    if (showAllPhrases.some(phrase => msg.includes(phrase)) ||
+        (msg.includes('show all') && msg.includes('task')) ||
+        (msg.includes('all pending') && msg.includes('task'))) {
+      return { type: 'tasks', action: 'read_all', showAll: true, showRest: false };
+    }
+
+    const showRestPhrases = [
+      'show me the rest', 'show the rest', 'show rest', 'show me more', 'show more tasks',
+      'show more', 'more tasks', 'show remaining tasks', 'remaining tasks', 'the other tasks',
+      'balance tasks', 'balance pending tasks', 'balance pending', 'rest of the tasks',
+      'rest of tasks', 'next tasks', 'next 10 tasks', 'next page'
+    ];
+    const otherPattern = /the other \d+ tasks?/;
+    const whichPattern = /which are the \d+/;
+    if (showRestPhrases.some(phrase => msg.includes(phrase)) || otherPattern.test(msg) || whichPattern.test(msg)) {
+      return { type: 'tasks', action: 'read', showAll: false, showRest: true };
+    }
+
+    const initialPhrases = [
+      'what tasks do i have', 'what tasks are pending', 'show my tasks', 'pending tasks',
+      'what are my tasks', 'what tasks do i have today', 'my tasks', 'list my tasks',
+      'show my to-do', 'show my todo', 'my to-do list', 'my todo list',
+      'what\'s on my plate', 'whats on my plate', 'what do i need to do'
+    ];
+    if (initialPhrases.some(phrase => msg.includes(phrase)) ||
+        (msg.includes('what tasks') && msg.includes('pending'))) {
+      return { type: 'tasks', action: 'read', showAll: false, showRest: false };
+    }
+    return null;
+  }
+
+  function matchesGmailPhrases(msg: string): RouteDecision | null {
+    const checkPhrases = [
+      'check my email', 'check my emails', 'check email', 'check emails',
+      'what\'s in my inbox', 'whats in my inbox', 'any new emails', 'any new email',
+      'email summary', 'summarize my email', 'summarize my emails', 'unread emails', 'unread email'
+    ];
+    if (checkPhrases.some(phrase => msg.includes(phrase))) {
+      return { type: 'gmail_check' };
+    }
+
+    const markReadPhrases = [
+      'mark all as read', 'mark emails as read', 'clear my inbox', 'clean up email', 'mark all read'
+    ];
+    if (markReadPhrases.some(phrase => msg.includes(phrase))) {
+      return { type: 'gmail_mark_read' };
+    }
+    return null;
+  }
+
+  function routeMessage(message: string): RouteDecision {
+    const msg = message.toLowerCase().trim();
+    if (matchesBriefingPhrases(msg)) return { type: 'daily_briefing' };
+    const tasksRoute = matchesTasksPhrases(msg);
+    if (tasksRoute) return tasksRoute;
+    const gmailRoute = matchesGmailPhrases(msg);
+    if (gmailRoute) return gmailRoute;
+    return { type: 'none' };
+  }
+
+  describe('Daily Briefing Routing', () => {
+    it('should route all briefing phrase variants correctly', () => {
+      const briefingMessages = [
+        'Give me my briefing',
+        'show my briefing today',
+        'daily briefing',
+        'morning briefing please',
+        'send me my briefing',
+        'what\'s my briefing',
+        'daily summary',
+        'morning update'
+      ];
+
+      briefingMessages.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('daily_briefing');
+      });
+    });
+
+    it('should NOT route non-briefing messages to briefing', () => {
+      const nonBriefingMessages = [
+        'what time is it',
+        'schedule a meeting',
+        'check my email',
+        'remind me to call mom'
+      ];
+
+      nonBriefingMessages.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).not.toBe('daily_briefing');
+      });
+    });
+  });
+
+  describe('Tasks Routing', () => {
+    it('should route initial task queries correctly', () => {
+      const initialQueries = [
+        'what tasks do I have',
+        'show my tasks',
+        'pending tasks',
+        'what are my tasks',
+        'what\'s on my plate',
+        'what do i need to do'
+      ];
+
+      initialQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('tasks');
+        if (route.type === 'tasks') {
+          expect(route.showAll).toBe(false);
+          expect(route.showRest).toBe(false);
+        }
+      });
+    });
+
+    it('should route "show all" task queries correctly', () => {
+      const showAllQueries = [
+        'show me all tasks',
+        'show all tasks',
+        'give me all tasks',
+        'all pending tasks',
+        'full list of tasks'
+      ];
+
+      showAllQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('tasks');
+        if (route.type === 'tasks') {
+          expect(route.showAll).toBe(true);
+          expect(route.showRest).toBe(false);
+        }
+      });
+    });
+
+    it('should route "show rest/more" task queries correctly', () => {
+      const showRestQueries = [
+        'show me the rest',
+        'show me more',
+        'remaining tasks',
+        'balance tasks',
+        'the other 15 tasks',
+        'rest of the tasks',
+        'next page'
+      ];
+
+      showRestQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('tasks');
+        if (route.type === 'tasks') {
+          expect(route.showAll).toBe(false);
+          expect(route.showRest).toBe(true);
+        }
+      });
+    });
+
+    it('should NOT misroute "balance tasks" to financial queries', () => {
+      const route = routeMessage('balance tasks');
+      expect(route.type).toBe('tasks');
+      expect(route.type).not.toBe('none'); // Should not fall through to AI
+    });
+  });
+
+  describe('Gmail Routing', () => {
+    it('should route email check queries correctly', () => {
+      const checkQueries = [
+        'check my email',
+        'any new emails',
+        'email summary',
+        'unread emails'
+      ];
+
+      checkQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('gmail_check');
+      });
+    });
+
+    it('should route mark-read queries correctly', () => {
+      const markReadQueries = [
+        'mark all as read',
+        'clear my inbox',
+        'mark all read'
+      ];
+
+      markReadQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('gmail_mark_read');
+      });
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle mixed case messages', () => {
+      expect(routeMessage('GIVE ME MY BRIEFING').type).toBe('daily_briefing');
+      expect(routeMessage('Show Me All Tasks').type).toBe('tasks');
+      expect(routeMessage('CHECK MY EMAIL').type).toBe('gmail_check');
+    });
+
+    it('should handle messages with extra whitespace', () => {
+      expect(routeMessage('  give me my briefing  ').type).toBe('daily_briefing');
+      expect(routeMessage('  show my tasks  ').type).toBe('tasks');
+    });
+
+    it('should return "none" for unrecognized messages', () => {
+      const unrecognizedMessages = [
+        'hello',
+        'what time is it',
+        'tell me a joke',
+        'calculate 2+2'
+      ];
+
+      unrecognizedMessages.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('none');
+      });
+    });
+  });
+});

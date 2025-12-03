@@ -62,7 +62,7 @@ function parseTimeReference(reference: string, traceId: string): { afterDate?: s
   return null;
 }
 
-async function getAccessToken(supabase: any, userId: string) {
+async function getAccessToken(supabase: any, userId: string, traceId?: string) {
   const { data: tokenData, error } = await supabase
     .from('oauth_tokens')
     .select('*')
@@ -71,19 +71,28 @@ async function getAccessToken(supabase: any, userId: string) {
     .single();
 
   if (error || !tokenData) {
-    throw new Error('Google account not connected');
+    console.log(`[${traceId || 'no-trace'}] OAuth token not found for user ${userId}`);
+    throw new Error('OAUTH_NOT_CONNECTED');
+  }
+
+  if (!tokenData.refresh_token) {
+    console.log(`[${traceId || 'no-trace'}] No refresh token available for user ${userId}`);
+    throw new Error('OAUTH_NOT_CONNECTED');
   }
 
   const expiresAt = new Date(tokenData.expires_at);
   if (expiresAt <= new Date()) {
+    console.log(`[${traceId || 'no-trace'}] Token expired, attempting refresh for user ${userId}`);
     const refreshResult = await supabase.functions.invoke('refresh-google-token', {
       body: { userId }
     });
     
     if (refreshResult.error || !refreshResult.data?.access_token) {
-      throw new Error('Failed to refresh token');
+      console.error(`[${traceId || 'no-trace'}] Token refresh failed:`, refreshResult.error);
+      throw new Error('OAUTH_EXPIRED');
     }
     
+    console.log(`[${traceId || 'no-trace'}] Token refreshed successfully`);
     return refreshResult.data.access_token;
   }
 
@@ -105,7 +114,23 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
-    const accessToken = await getAccessToken(supabase, userId);
+    // OAuth error handling with user-friendly messages
+    let accessToken: string;
+    try {
+      accessToken = await getAccessToken(supabase, userId, traceId);
+    } catch (oauthError) {
+      const errorMsg = oauthError instanceof Error ? oauthError.message : 'Unknown error';
+      if (errorMsg === 'OAUTH_NOT_CONNECTED' || errorMsg === 'OAUTH_EXPIRED') {
+        console.log(`[${traceId}] Gmail OAuth error: ${errorMsg}`);
+        return new Response(JSON.stringify({
+          message: "⚠️ Your Google account connection has expired or is not set up. Please reconnect your Google account to use Gmail features.\n\nReply 'connect google' to start the connection process."
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      throw oauthError;
+    }
+
     let message = '';
 
     if (intent.type === 'gmail_summarize_unread') {

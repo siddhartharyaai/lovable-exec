@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.0/+esm";
+import { routeMessage, describeRoute, type RouteDecision } from "../_shared/router.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -898,129 +899,141 @@ serve(async (req) => {
       console.log(`[${traceId}] 📝 Slot-filling mode active for topic: ${currentTopic}. Treating message as slot value.`);
     }
     
-    // ============= DAILY BRIEFING ROUTING: Explicit phrase detection BEFORE AI call =============
-    // Using existing msgLower from line 752
-    const briefingPhrases = [
-      'briefing', 
-      'give me my briefing', 
-      'show my briefing',
-      'give me my daily briefing',
-      'show my daily briefing',
-      'daily briefing',
-      'morning briefing',
-      'briefing today',
-      'my briefing today',
-      'give me briefing',
-      'send me my briefing'
-    ];
-    
-    if (briefingPhrases.some(phrase => msgLower.includes(phrase))) {
-      console.log(`[${traceId}] 📅 ROUTING: Daily briefing request detected from: "${finalMessage}"`);
+    // ============= CENTRALIZED ROUTING: Use shared router module BEFORE AI call =============
+    // Skip routing if we're in slot-filling mode or have a forced/routed intent
+    if (!isSlotFilling && !forcedIntent && !routedIntent) {
+      const routeDecision = routeMessage(finalMessage);
+      console.log(`[${traceId}] 🔀 ROUTER: ${describeRoute(routeDecision)} for: "${finalMessage}"`);
       
-      // Invoke daily-briefing function directly
-      const briefingResult = await supabase.functions.invoke('daily-briefing', {
-        body: {
-          userId,
-          traceId,
-          isManualTrigger: true  // This is a user-initiated briefing
+      // Handle DAILY BRIEFING route
+      if (routeDecision.type === 'daily_briefing') {
+        console.log(`[${traceId}] 📅 EXECUTING: Daily briefing via centralized router`);
+        
+        const briefingResult = await supabase.functions.invoke('daily-briefing', {
+          body: {
+            userId,
+            traceId,
+            isManualTrigger: true
+          }
+        });
+        
+        if (briefingResult.error) {
+          console.error(`[${traceId}] Daily briefing error:`, briefingResult.error);
+          return new Response(JSON.stringify({ 
+            message: `I tried to generate your briefing but encountered an error. Please try again.` 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
-      });
-      
-      if (briefingResult.error) {
-        console.error(`[${traceId}] Daily briefing error:`, briefingResult.error);
-        const message = `I tried to generate your briefing but encountered an error. Please try again.`;
+        
+        const message = briefingResult.data?.message || 'Your briefing is ready but I encountered an issue formatting it.';
         return new Response(JSON.stringify({ message }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       
-      const message = briefingResult.data?.message || 'Your briefing is ready but I encountered an issue formatting it.';
-      return new Response(JSON.stringify({ message }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    
-    // ============= TASKS ROUTING: Explicit phrase detection BEFORE AI call =============
-    let tasksRouting: { action: string; show_all: boolean; show_rest: boolean } | null = null;
-    
-    // FULL LIST phrases: "show me all tasks", "show all 44", "give me all tasks", etc.
-    if (
-      msgLower.includes('show me all tasks') ||
-      msgLower.includes('show all tasks') ||
-      msgLower.includes('give me all tasks') ||
-      msgLower.includes('all pending tasks') ||
-      msgLower.includes('give me the full list of tasks') ||
-      msgLower.includes('list all my tasks') ||
-      // Broad catch for variants like "show all 44", "show all my tasks"
-      (msgLower.includes('show all') && msgLower.includes('task')) ||
-      (msgLower.includes('all pending') && msgLower.includes('task'))
-    ) {
-      console.log(`[${traceId}] 📋 ROUTING: "Show all tasks" detected from: "${finalMessage}"`);
-      tasksRouting = { action: 'read_all', show_all: true, show_rest: false };
-    }
-    // REST / NEXT PAGE phrases: "show me the rest", "show me more", "balance tasks", etc.
-    else if (
-      msgLower.includes('show me the rest') ||
-      msgLower.includes('show the rest') ||
-      msgLower.includes('show rest') ||
-      msgLower.includes('show me more') ||
-      msgLower.includes('show more tasks') ||
-      msgLower.includes('show more') ||
-      msgLower.includes('more tasks') ||
-      msgLower.includes('show remaining tasks') ||
-      msgLower.includes('remaining tasks') ||
-      msgLower.includes('the other tasks') ||
-      msgLower.includes('the other 10 tasks') ||
-      msgLower.includes('the other 15 tasks') ||
-      msgLower.includes('the other 34 tasks') ||
-      msgLower.includes('the other ') ||
-      msgLower.includes('balance tasks') ||
-      msgLower.includes('balance pending tasks') ||
-      msgLower.includes('balance pending') ||
-      msgLower.includes('rest of the tasks') ||
-      msgLower.includes('rest of tasks') ||
-      msgLower.includes('which are the ')
-    ) {
-      console.log(`[${traceId}] 📋 ROUTING: "Show rest/more tasks" matched for: "${finalMessage}"`);
-      tasksRouting = { action: 'read', show_all: false, show_rest: true };
-    }
-    // INITIAL VIEW phrases: "what tasks do I have", "what tasks are pending", "show my tasks"
-    else if (
-      (msgLower.includes('what tasks') && msgLower.includes('pending')) ||
-      msgLower.includes('what tasks do i have') ||
-      msgLower.includes('what tasks do i') ||
-      msgLower.includes('what tasks are pending') ||
-      msgLower.includes('show my tasks') ||
-      msgLower.includes('pending tasks') ||
-      msgLower.includes('what are my tasks') ||
-      msgLower.includes('what tasks do i have today')
-    ) {
-      console.log(`[${traceId}] 📋 ROUTING: Initial task query detected (default view) from: "${finalMessage}"`);
-      tasksRouting = { action: 'read', show_all: false, show_rest: false };
-    }
-    
-    // If tasks routing triggered, force execution
-    if (tasksRouting) {
-      console.log(`[${traceId}] 📋 FORCING tasks tool execution:`, tasksRouting);
-      const tasksResult = await supabase.functions.invoke('handle-tasks', {
-        body: { 
-          intent: {
-            entities: {
-              show_all: tasksRouting.show_all,
-              show_rest: tasksRouting.show_rest
-            }
-          }, 
-          userId, 
-          traceId,
-          action: tasksRouting.action
-        }
-      });
+      // Handle TASKS route
+      if (routeDecision.type === 'tasks') {
+        console.log(`[${traceId}] 📋 EXECUTING: Tasks via centralized router - showAll=${routeDecision.showAll}, showRest=${routeDecision.showRest}`);
+        
+        const tasksResult = await supabase.functions.invoke('handle-tasks', {
+          body: { 
+            intent: {
+              entities: {
+                show_all: routeDecision.showAll,
+                show_rest: routeDecision.showRest
+              }
+            }, 
+            userId, 
+            traceId,
+            action: routeDecision.action
+          }
+        });
+        
+        const message = tasksResult.data?.message ?? 
+          `I couldn't access your tasks right now. Please try again in a moment.`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       
-      const message = tasksResult.data?.message ??
-        `I couldn't access your tasks right now. Please try again in a moment.`;
-      return new Response(JSON.stringify({ message }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      // Handle GMAIL routes
+      if (routeDecision.type === 'gmail_check') {
+        console.log(`[${traceId}] 📧 EXECUTING: Gmail check via centralized router`);
+        
+        const gmailResult = await supabase.functions.invoke('handle-gmail', {
+          body: { 
+            intent: { type: 'gmail_summarize_unread', entities: { max: 10 } },
+            userId, 
+            traceId
+          }
+        });
+        
+        const message = gmailResult.data?.message ?? 
+          `I couldn't access your email right now. Please try again in a moment.`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      if (routeDecision.type === 'gmail_mark_read') {
+        console.log(`[${traceId}] 📧 EXECUTING: Gmail mark read via centralized router`);
+        
+        const gmailResult = await supabase.functions.invoke('handle-gmail', {
+          body: { 
+            intent: { type: 'gmail_mark_read', entities: { scope: 'all' } },
+            userId, 
+            traceId
+          }
+        });
+        
+        const message = gmailResult.data?.message ?? 
+          `I couldn't mark your emails as read right now. Please try again.`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Handle CALENDAR READ route
+      if (routeDecision.type === 'calendar_read') {
+        console.log(`[${traceId}] 📅 EXECUTING: Calendar read via centralized router`);
+        
+        // Default to today's calendar
+        const now = new Date();
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const istTime = new Date(now.getTime() + istOffset);
+        const todayStart = new Date(istTime);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(istTime);
+        todayEnd.setHours(23, 59, 59, 999);
+        
+        const calendarResult = await supabase.functions.invoke('handle-calendar', {
+          body: { 
+            intent: { 
+              type: 'calendar_read', 
+              entities: { 
+                start_date: todayStart.toISOString(),
+                end_date: todayEnd.toISOString()
+              } 
+            },
+            userId, 
+            traceId
+          }
+        });
+        
+        const message = calendarResult.data?.message ?? 
+          `I couldn't access your calendar right now. Please try again in a moment.`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // For other route types (calendar_create, calendar_update, calendar_delete, gmail_search, reminders)
+      // Let AI handle with tools since they need parameter extraction
+      // Log the route detection for debugging
+      if (routeDecision.type !== 'none') {
+        console.log(`[${traceId}] 🔀 Route detected but needs AI for parameter extraction: ${describeRoute(routeDecision)}`);
+      }
     }
 
     // Build conversation context
