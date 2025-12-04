@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.0/+esm";
-import { routeMessage, describeRoute, type RouteDecision } from "../_shared/router.ts";
+import { routeMessage, describeRoute, extractGmailSearchSender, extractContactName, type RouteDecision } from "../_shared/router.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1028,7 +1028,79 @@ serve(async (req) => {
         });
       }
       
-      // For other route types (calendar_create, calendar_update, calendar_delete, gmail_search, reminders)
+      // Handle GMAIL SEARCH route
+      if (routeDecision.type === 'gmail_search') {
+        const senderName = extractGmailSearchSender(finalMessage);
+        console.log(`[${traceId}] 📧 EXECUTING: Gmail search via centralized router - sender: "${senderName}"`);
+        
+        if (senderName) {
+          const gmailResult = await supabase.functions.invoke('handle-gmail', {
+            body: { 
+              intent: { 
+                type: 'gmail_search', 
+                entities: { 
+                  sender_name: senderName,
+                  days_back: 30, // Default to last month
+                  max_results: 5
+                } 
+              },
+              userId, 
+              traceId
+            }
+          });
+          
+          const message = gmailResult.data?.message ?? 
+            `I couldn't search your emails right now. Please try again.`;
+          return new Response(JSON.stringify({ message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        // If we couldn't extract sender, fall through to AI for parameter extraction
+        console.log(`[${traceId}] 📧 Gmail search detected but couldn't extract sender - letting AI handle`);
+      }
+      
+      // Handle CONTACT LOOKUP route
+      if (routeDecision.type === 'contact_lookup') {
+        const contactName = extractContactName(finalMessage);
+        console.log(`[${traceId}] 📇 EXECUTING: Contact lookup via centralized router - name: "${contactName}"`);
+        
+        if (contactName) {
+          const contactResult = await supabase.functions.invoke('handle-contacts', {
+            body: { 
+              intent: { 
+                entities: { 
+                  name: contactName 
+                } 
+              },
+              userId, 
+              traceId
+            }
+          });
+          
+          // Store contacts in session state for follow-up
+          if (contactResult.data?.contacts) {
+            await supabase
+              .from('session_state')
+              .upsert({
+                user_id: userId,
+                contacts_search_results: contactResult.data.contacts,
+                contacts_search_name: contactName,
+                contacts_search_timestamp: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+          }
+          
+          const message = contactResult.data?.message ?? 
+            `I couldn't find that contact right now. Please try again.`;
+          return new Response(JSON.stringify({ message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        // If we couldn't extract name, fall through to AI
+        console.log(`[${traceId}] 📇 Contact lookup detected but couldn't extract name - letting AI handle`);
+      }
+      
+      // For other route types (calendar_create, calendar_update, calendar_delete, reminders)
       // Let AI handle with tools since they need parameter extraction
       // Log the route detection for debugging
       if (routeDecision.type !== 'none') {

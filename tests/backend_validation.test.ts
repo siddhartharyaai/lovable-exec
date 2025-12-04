@@ -728,6 +728,7 @@ describe('Centralized Router Module', () => {
     | { type: 'gmail_mark_read' }
     | { type: 'reminder_create' }
     | { type: 'reminder_snooze' }
+    | { type: 'contact_lookup' }
     | { type: 'none' };
 
   function matchesBriefingPhrases(msg: string): boolean {
@@ -788,11 +789,66 @@ describe('Centralized Router Module', () => {
       return { type: 'gmail_check' };
     }
 
+    const searchPhrases = [
+      'find emails from', 'find email from', 'search emails from', 'search email from',
+      'emails from', 'show me emails from', 'show emails from', 'pull up email from', 'look for email from'
+    ];
+    if (searchPhrases.some(phrase => msg.includes(phrase))) {
+      return { type: 'gmail_search' };
+    }
+
     const markReadPhrases = [
       'mark all as read', 'mark emails as read', 'clear my inbox', 'clean up email', 'mark all read'
     ];
     if (markReadPhrases.some(phrase => msg.includes(phrase))) {
       return { type: 'gmail_mark_read' };
+    }
+    return null;
+  }
+
+  function matchesContactPhrases(msg: string): RouteDecision | null {
+    const lookupPatterns = [
+      /what(?:'s|s| is) .* email/i,
+      /find .* email/i,
+      /get .* email/i,
+      /what(?:'s|s| is) .* phone/i,
+      /find .* phone/i,
+      /find contact/i,
+      /look ?up contact/i,
+      /search contact/i
+    ];
+    if (lookupPatterns.some(pattern => pattern.test(msg))) {
+      return { type: 'contact_lookup' };
+    }
+    return null;
+  }
+
+  function extractGmailSearchSender(msg: string): string | null {
+    const patterns = [
+      /find (?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+      /(?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+      /show (?:me )?(?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+    ];
+    for (const pattern of patterns) {
+      const match = msg.match(pattern);
+      if (match && match[1]) return match[1].trim();
+    }
+    return null;
+  }
+
+  function extractContactName(msg: string): string | null {
+    const patterns = [
+      /what(?:'s|s| is) (.+?)(?:'s)? email/i,
+      /find (.+?)(?:'s)? email/i,
+      /get (.+?)(?:'s)? email/i,
+      /what(?:'s|s| is) (.+?)(?:'s)? phone/i,
+      /find (.+?)(?:'s)? phone/i,
+      /look ?up contact (.+)/i,
+      /find contact (.+)/i
+    ];
+    for (const pattern of patterns) {
+      const match = msg.match(pattern);
+      if (match && match[1]) return match[1].trim();
     }
     return null;
   }
@@ -804,6 +860,8 @@ describe('Centralized Router Module', () => {
     if (tasksRoute) return tasksRoute;
     const gmailRoute = matchesGmailPhrases(msg);
     if (gmailRoute) return gmailRoute;
+    const contactRoute = matchesContactPhrases(msg);
+    if (contactRoute) return contactRoute;
     return { type: 'none' };
   }
 
@@ -934,6 +992,64 @@ describe('Centralized Router Module', () => {
       markReadQueries.forEach(msg => {
         const route = routeMessage(msg);
         expect(route.type).toBe('gmail_mark_read');
+      });
+    });
+
+    it('should route email search queries correctly', () => {
+      const searchQueries = [
+        'find emails from Renu',
+        'show me emails from boss',
+        'emails from John',
+        'search emails from client'
+      ];
+
+      searchQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('gmail_search');
+      });
+    });
+
+    it('should extract sender name from search queries', () => {
+      expect(extractGmailSearchSender('find emails from Renu')).toBe('Renu');
+      expect(extractGmailSearchSender('show me emails from John Smith')).toBe('John Smith');
+      expect(extractGmailSearchSender('emails from boss last week')).toBe('boss');
+    });
+  });
+
+  describe('Contact Lookup Routing', () => {
+    it('should route contact lookup queries correctly', () => {
+      const contactQueries = [
+        "what's Rohan's email",
+        'find Priya email',
+        'get John email',
+        "what's mom's phone",
+        'find contact Siddharth',
+        'lookup contact boss'
+      ];
+
+      contactQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('contact_lookup');
+      });
+    });
+
+    it('should extract contact name from lookup queries', () => {
+      expect(extractContactName("what's Rohan's email")).toBe("Rohan's");
+      expect(extractContactName('find Priya email')).toBe('Priya');
+      expect(extractContactName('get John email')).toBe('John');
+      expect(extractContactName('find contact Siddharth')).toBe('Siddharth');
+    });
+
+    it('should NOT route non-contact queries to contact lookup', () => {
+      const nonContactQueries = [
+        'send an email to Rohan',
+        'email John about the meeting',
+        'check my email'
+      ];
+
+      nonContactQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).not.toBe('contact_lookup');
       });
     });
   });
