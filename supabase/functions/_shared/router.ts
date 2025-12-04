@@ -56,6 +56,12 @@ export function routeMessage(message: string): RouteDecision {
     return reminderRoute;
   }
   
+  // ============= CONTACT ROUTING =============
+  const contactRoute = matchesContactPhrases(msg);
+  if (contactRoute) {
+    return contactRoute;
+  }
+  
   // No explicit routing detected - let AI handle
   return { type: 'none' };
 }
@@ -344,6 +350,90 @@ export function matchesReminderPhrases(msg: string): RouteDecision | null {
   
   if (snoozePhrases.some(phrase => msg.includes(phrase))) {
     return { type: 'reminder_snooze' };
+  }
+  
+  return null;
+}
+
+/**
+ * Check if message matches contact lookup phrases
+ */
+export function matchesContactPhrases(msg: string): RouteDecision | null {
+  // Contact LOOKUP phrases - find someone's email/phone
+  const lookupPhrases = [
+    'what\'s .* email',
+    'whats .* email',
+    'find .* email',
+    'get .* email',
+    'what\'s .* phone',
+    'whats .* phone',
+    'find .* phone',
+    'get .* phone',
+    'find contact',
+    'look up contact',
+    'lookup contact',
+    'search contact',
+    'find .* number',
+    'what is .* email',
+    'what is .* phone'
+  ];
+  
+  // Check regex patterns
+  if (lookupPhrases.some(pattern => {
+    const regex = new RegExp(pattern, 'i');
+    return regex.test(msg);
+  })) {
+    return { type: 'contact_lookup' };
+  }
+  
+  return null;
+}
+
+/**
+ * Extract sender name from Gmail search phrases
+ */
+export function extractGmailSearchSender(msg: string): string | null {
+  const patterns = [
+    /find (?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+    /(?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+    /show (?:me )?(?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+    /search (?:for )?(?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+    /pull up (?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
+    /look for (?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = msg.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract contact name from lookup phrases
+ */
+export function extractContactName(msg: string): string | null {
+  const patterns = [
+    /what(?:'s|s| is) (.+?)(?:'s)? email/i,
+    /find (.+?)(?:'s)? email/i,
+    /get (.+?)(?:'s)? email/i,
+    /what(?:'s|s| is) (.+?)(?:'s)? phone/i,
+    /find (.+?)(?:'s)? phone/i,
+    /get (.+?)(?:'s)? phone/i,
+    /find (.+?)(?:'s)? number/i,
+    /look ?up contact (.+)/i,
+    /find contact (.+)/i,
+    /search contact (.+)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = msg.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
   }
   
   return null;
