@@ -16,6 +16,8 @@ export type RouteDecision =
   | { type: 'reminder_snooze' }
   | { type: 'contact_lookup' }
   | { type: 'document_qna' }
+  | { type: 'document_list' }
+  | { type: 'document_recall' }
   | { type: 'web_search' }
   | { type: 'none' }; // No explicit routing - let AI decide
 
@@ -60,6 +62,12 @@ export function routeMessage(message: string): RouteDecision {
   const contactRoute = matchesContactPhrases(msg);
   if (contactRoute) {
     return contactRoute;
+  }
+  
+  // ============= DOCUMENT ROUTING =============
+  const documentRoute = matchesDocumentPhrases(msg);
+  if (documentRoute) {
+    return documentRoute;
   }
   
   // No explicit routing detected - let AI handle
@@ -440,6 +448,99 @@ export function extractContactName(msg: string): string | null {
 }
 
 /**
+ * Check if message matches document Q&A phrases
+ */
+export function matchesDocumentPhrases(msg: string): RouteDecision | null {
+  // Document LIST/RECALL phrases
+  const listPhrases = [
+    'what documents have i uploaded',
+    'what documents did i upload',
+    'show my documents',
+    'list my documents',
+    'my uploaded documents',
+    'what files have i uploaded',
+    'show uploaded files',
+    'list uploaded files',
+    'what pdfs have i uploaded',
+    'what docs have i uploaded'
+  ];
+  
+  if (listPhrases.some(phrase => msg.includes(phrase))) {
+    return { type: 'document_list' };
+  }
+  
+  // Document RECALL phrases - open a previous document
+  const recallPatterns = [
+    /open (?:the )?(?:pdf|doc|document|file) (?:from|called|named)/i,
+    /use (?:the )?(?:pdf|doc|document|file) (?:from|called|named)/i,
+    /go back to (?:the )?(?:pdf|doc|document|file)/i,
+    /switch to (?:the )?(?:pdf|doc|document|file)/i,
+    /load (?:the )?(?:pdf|doc|document|file)/i
+  ];
+  
+  if (recallPatterns.some(pattern => pattern.test(msg))) {
+    return { type: 'document_recall' };
+  }
+  
+  // Document Q&A phrases - questions about document content
+  const qnaPhrases = [
+    'summarize this',
+    'summarize the document',
+    'summarize this document',
+    'summarise this',
+    'summarise the document',
+    'what does this say',
+    'what does the document say',
+    'what\'s in this document',
+    'whats in this document',
+    'what is in this document',
+    'extract from this',
+    'extract action items',
+    'key points from this',
+    'key takeaways',
+    'main points',
+    'clean this up',
+    'reformat this'
+  ];
+  
+  // Also match patterns like "what does it say about X"
+  const aboutPatterns = [
+    /what does (?:it|this|the document) say about/i,
+    /what (?:is|are) the .* in (?:this|the) document/i,
+    /find .* in (?:this|the) document/i,
+    /search (?:this|the) document for/i
+  ];
+  
+  if (qnaPhrases.some(phrase => msg.includes(phrase)) ||
+      aboutPatterns.some(pattern => pattern.test(msg))) {
+    return { type: 'document_qna' };
+  }
+  
+  return null;
+}
+
+/**
+ * Extract document name from recall phrases
+ */
+export function extractDocumentName(msg: string): string | null {
+  const patterns = [
+    /open (?:the )?(?:pdf|doc|document|file) (?:from|called|named) ["']?(.+?)["']?$/i,
+    /use (?:the )?(?:pdf|doc|document|file) (?:from|called|named) ["']?(.+?)["']?$/i,
+    /load (?:the )?(?:pdf|doc|document|file) ["']?(.+?)["']?$/i,
+    /(?:pdf|doc|document|file) (?:from|called|named) ["']?(.+?)["']?$/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = msg.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Get human-readable description of route decision (for logging)
  */
 export function describeRoute(decision: RouteDecision): string {
@@ -472,6 +573,10 @@ export function describeRoute(decision: RouteDecision): string {
       return 'Contact - Lookup';
     case 'document_qna':
       return 'Document - Q&A';
+    case 'document_list':
+      return 'Document - List Uploaded';
+    case 'document_recall':
+      return 'Document - Recall Previous';
     case 'web_search':
       return 'Web Search';
     case 'none':
