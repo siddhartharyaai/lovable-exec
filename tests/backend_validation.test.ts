@@ -729,6 +729,9 @@ describe('Centralized Router Module', () => {
     | { type: 'reminder_create' }
     | { type: 'reminder_snooze' }
     | { type: 'contact_lookup' }
+    | { type: 'document_qna' }
+    | { type: 'document_list' }
+    | { type: 'document_recall' }
     | { type: 'none' };
 
   function matchesBriefingPhrases(msg: string): boolean {
@@ -823,6 +826,45 @@ describe('Centralized Router Module', () => {
     return null;
   }
 
+  function matchesDocumentPhrases(msg: string): RouteDecision | null {
+    // Document LIST phrases
+    const listPhrases = [
+      'what documents have i uploaded', 'what documents did i upload', 'show my documents',
+      'list my documents', 'my uploaded documents', 'what files have i uploaded',
+      'show uploaded files', 'list uploaded files', 'what pdfs have i uploaded'
+    ];
+    if (listPhrases.some(phrase => msg.includes(phrase))) {
+      return { type: 'document_list' };
+    }
+
+    // Document RECALL phrases
+    const recallPatterns = [
+      /open (?:the )?(?:pdf|doc|document|file) (?:from|called|named)/i,
+      /use (?:the )?(?:pdf|doc|document|file) (?:from|called|named)/i,
+      /go back to (?:the )?(?:pdf|doc|document|file)/i,
+      /load (?:the )?(?:pdf|doc|document|file)/i
+    ];
+    if (recallPatterns.some(pattern => pattern.test(msg))) {
+      return { type: 'document_recall' };
+    }
+
+    // Document Q&A phrases
+    const qnaPhrases = [
+      'summarize this', 'summarize the document', 'summarize this document',
+      'what does this say', 'what does the document say', 'what\'s in this document',
+      'extract from this', 'extract action items', 'key points from this',
+      'key takeaways', 'main points'
+    ];
+    const aboutPatterns = [
+      /what does (?:it|this|the document) say about/i,
+      /what (?:is|are) the .* in (?:this|the) document/i
+    ];
+    if (qnaPhrases.some(phrase => msg.includes(phrase)) || aboutPatterns.some(pattern => pattern.test(msg))) {
+      return { type: 'document_qna' };
+    }
+    return null;
+  }
+
   function extractGmailSearchSender(msg: string): string | null {
     const patterns = [
       /find (?:emails?|messages?) from (.+?)(?:\s+(?:in|from|about|last|this|today|yesterday|week|month).*)?$/i,
@@ -853,6 +895,19 @@ describe('Centralized Router Module', () => {
     return null;
   }
 
+  function extractDocumentName(msg: string): string | null {
+    const patterns = [
+      /open (?:the )?(?:pdf|doc|document|file) (?:from|called|named) ["']?(.+?)["']?$/i,
+      /use (?:the )?(?:pdf|doc|document|file) (?:from|called|named) ["']?(.+?)["']?$/i,
+      /load (?:the )?(?:pdf|doc|document|file) ["']?(.+?)["']?$/i
+    ];
+    for (const pattern of patterns) {
+      const match = msg.match(pattern);
+      if (match && match[1]) return match[1].trim();
+    }
+    return null;
+  }
+
   function routeMessage(message: string): RouteDecision {
     const msg = message.toLowerCase().trim();
     if (matchesBriefingPhrases(msg)) return { type: 'daily_briefing' };
@@ -862,6 +917,8 @@ describe('Centralized Router Module', () => {
     if (gmailRoute) return gmailRoute;
     const contactRoute = matchesContactPhrases(msg);
     if (contactRoute) return contactRoute;
+    const documentRoute = matchesDocumentPhrases(msg);
+    if (documentRoute) return documentRoute;
     return { type: 'none' };
   }
 
@@ -1050,6 +1107,74 @@ describe('Centralized Router Module', () => {
       nonContactQueries.forEach(msg => {
         const route = routeMessage(msg);
         expect(route.type).not.toBe('contact_lookup');
+      });
+    });
+  });
+
+  describe('Document Routing', () => {
+    it('should route document list queries correctly', () => {
+      const listQueries = [
+        'what documents have i uploaded',
+        'show my documents',
+        'list my documents',
+        'what files have i uploaded',
+        'what pdfs have i uploaded'
+      ];
+
+      listQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('document_list');
+      });
+    });
+
+    it('should route document recall queries correctly', () => {
+      const recallQueries = [
+        'open the document called NDA',
+        'use the pdf from last week',
+        'load the file named contract',
+        'go back to the document'
+      ];
+
+      recallQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('document_recall');
+      });
+    });
+
+    it('should route document Q&A queries correctly', () => {
+      const qnaQueries = [
+        'summarize this',
+        'summarize the document',
+        'what does this say',
+        'extract action items',
+        'key points from this',
+        'what does it say about liability'
+      ];
+
+      qnaQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).toBe('document_qna');
+      });
+    });
+
+    it('should extract document name from recall queries', () => {
+      expect(extractDocumentName('open the document called NDA')).toBe('NDA');
+      expect(extractDocumentName('use the pdf named contract.pdf')).toBe('contract.pdf');
+      expect(extractDocumentName('load the file from monday')).toBe('monday');
+    });
+
+    it('should NOT route general questions to document Q&A', () => {
+      const nonDocQueries = [
+        'what time is it',
+        'schedule a meeting',
+        'check my email'
+      ];
+
+      nonDocQueries.forEach(msg => {
+        const route = routeMessage(msg);
+        expect(route.type).not.toBe('document_qna');
+        expect(route.type).not.toBe('document_list');
+        expect(route.type).not.toBe('document_recall');
       });
     });
   });

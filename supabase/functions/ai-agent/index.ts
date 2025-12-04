@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.0/+esm";
-import { routeMessage, describeRoute, extractGmailSearchSender, extractContactName, type RouteDecision } from "../_shared/router.ts";
+import { routeMessage, describeRoute, extractGmailSearchSender, extractContactName, extractDocumentName, type RouteDecision } from "../_shared/router.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -495,6 +495,43 @@ Body: "Got it, thanks."
           }
         },
         required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_documents",
+      description: "List all documents the user has uploaded via WhatsApp (PDFs, DOCs, DOCX). Use when user asks 'what documents have I uploaded', 'show my documents', 'list my uploaded files'. Returns recent documents with names, dates, and ability to select one for Q&A.",
+      parameters: {
+        type: "object",
+        properties: {
+          max_count: { 
+            type: "number", 
+            description: "Maximum number of documents to show. Default 10, max 20." 
+          }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "recall_document",
+      description: "Set a previously uploaded document as the active context for follow-up questions. Use when user says 'open the PDF from last week', 'use the document called X', 'go back to that file'. After recalling, user can ask questions about it.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_name: { 
+            type: "string", 
+            description: "Name or partial name of the document to recall. Can also be date-based like 'the PDF from last Tuesday'" 
+          },
+          document_id: { 
+            type: "string", 
+            description: "Optional: Exact document ID if known from list_documents results" 
+          }
+        },
+        required: ["document_name"]
       }
     }
   },
@@ -1098,6 +1135,152 @@ serve(async (req) => {
         }
         // If we couldn't extract name, fall through to AI
         console.log(`[${traceId}] 📇 Contact lookup detected but couldn't extract name - letting AI handle`);
+      }
+      
+      // Handle DOCUMENT LIST route
+      if (routeDecision.type === 'document_list') {
+        console.log(`[${traceId}] 📄 EXECUTING: Document list via centralized router`);
+        
+        // Fetch user's documents directly
+        const { data: documents, error: docsError } = await supabase
+          .from('user_documents')
+          .select('id, filename, mime_type, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(15);
+        
+        if (docsError) {
+          console.error(`[${traceId}] Document list error:`, docsError);
+          return new Response(JSON.stringify({ 
+            message: `I couldn't fetch your documents right now. Please try again.` 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        if (!documents || documents.length === 0) {
+          return new Response(JSON.stringify({ 
+            message: `You haven't uploaded any documents yet. Send me a PDF, DOC, or DOCX file via WhatsApp and I'll help you search through it!` 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        // Format the document list
+        const docList = documents.map((doc: any, i: number) => {
+          const date = new Date(doc.created_at);
+          const dateStr = date.toLocaleDateString('en-IN', { 
+            timeZone: 'Asia/Kolkata',
+            day: 'numeric',
+            month: 'short'
+          });
+          return `${i + 1}. 📄 ${doc.filename} (${dateStr})`;
+        }).join('\n');
+        
+        const message = `📁 **Your Uploaded Documents (${documents.length}):**\n\n${docList}\n\n💡 Say "summarize [name]" or "what does [name] say about X" to query any document.`;
+        
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Handle DOCUMENT RECALL route
+      if (routeDecision.type === 'document_recall') {
+        const docName = extractDocumentName(finalMessage);
+        console.log(`[${traceId}] 📄 EXECUTING: Document recall via centralized router - name: "${docName}"`);
+        
+        // Fetch user's documents to find a match
+        const { data: documents, error: docsError } = await supabase
+          .from('user_documents')
+          .select('id, filename, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        
+        if (docsError || !documents || documents.length === 0) {
+          return new Response(JSON.stringify({ 
+            message: `You haven't uploaded any documents yet. Send me a PDF, DOC, or DOCX file to get started!` 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        // Try to find matching document
+        let targetDoc: any = null;
+        if (docName) {
+          // Search by name match
+          targetDoc = documents.find((d: any) => 
+            d.filename.toLowerCase().includes(docName.toLowerCase())
+          );
+        }
+        
+        if (!targetDoc) {
+          // Show available documents
+          const docList = documents.slice(0, 5).map((doc: any, i: number) => {
+            return `${i + 1}. ${doc.filename}`;
+          }).join('\n');
+          
+          return new Response(JSON.stringify({ 
+            message: `I couldn't find a document matching "${docName || 'that'}". Here are your recent documents:\n\n${docList}\n\nWhich one would you like to use?` 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        // Update session state with recalled document
+        await supabase
+          .from('session_state')
+          .upsert({
+            user_id: userId,
+            last_uploaded_doc_id: targetDoc.id,
+            last_uploaded_doc_name: targetDoc.filename,
+            last_doc: {
+              id: targetDoc.id,
+              title: targetDoc.filename,
+              uploaded_at: targetDoc.created_at
+            },
+            last_doc_summary: null,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+        
+        return new Response(JSON.stringify({ 
+          message: `✅ Now using **${targetDoc.filename}**. What would you like to know about it?\n\n💡 Try: "summarize this", "what are the key points", or ask a specific question.` 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Handle DOCUMENT Q&A route
+      if (routeDecision.type === 'document_qna') {
+        console.log(`[${traceId}] 📄 EXECUTING: Document Q&A via centralized router`);
+        
+        // Check if user has a document context
+        if (!sessionData.last_doc && !sessionData.last_uploaded_doc_id) {
+          return new Response(JSON.stringify({ 
+            message: `I don't have a document in context. Please either:\n\n1. Send me a PDF/DOC file via WhatsApp\n2. Say "list my documents" to see your uploads\n3. Say "use document [name]" to load a previous upload` 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        // Call handle-document-qna with context
+        const docQnaResult = await supabase.functions.invoke('handle-document-qna', {
+          body: {
+            intent: {
+              query: finalMessage,
+              documentId: sessionData.last_uploaded_doc_id || sessionData.last_doc?.id,
+              documentName: sessionData.last_uploaded_doc_name || sessionData.last_doc?.title
+            },
+            userId,
+            traceId
+          }
+        });
+        
+        const message = docQnaResult.data?.message ?? 
+          `I couldn't process that document query. Please try again.`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
       
       // For other route types (calendar_create, calendar_update, calendar_delete, reminders)
