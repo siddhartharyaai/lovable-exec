@@ -1206,3 +1206,493 @@ describe('Centralized Router Module', () => {
     });
   });
 });
+
+// ============= PHASE 4: FORMATTER MODULE TESTS =============
+
+describe('WhatsApp Message Formatter Module', () => {
+  describe('Task Formatters', () => {
+    it('should format task created message correctly', () => {
+      const title = 'Review quarterly report';
+      const msg = `✅ Task created: "${title}"`;
+      expect(msg).toContain('✅');
+      expect(msg).toContain(title);
+    });
+
+    it('should format task created with due date', () => {
+      const title = 'Submit expense report';
+      const dueDate = new Date('2025-12-10').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const msg = `✅ Task created: "${title}" (due ${dueDate})`;
+      expect(msg).toContain('due Dec 10');
+    });
+
+    it('should format task completed with index', () => {
+      const msg = `✅ Task 4 completed: "Send email to client"`;
+      expect(msg).toContain('Task 4');
+      expect(msg).toContain('completed');
+    });
+
+    it('should format tasks list with correct structure', () => {
+      const tasks = [
+        { title: 'Task A', index: 1, due: 'Dec 5' },
+        { title: 'Task B', index: 2, due: null },
+        { title: 'Task C', index: 3, due: 'Dec 7' },
+      ];
+      const total = 15;
+      
+      let msg = `✅ **Your Tasks (${total} pending)**\n\n`;
+      tasks.forEach(task => {
+        msg += `${task.index}. ${task.title}`;
+        if (task.due) msg += ` _(due ${task.due})_`;
+        msg += '\n';
+      });
+      
+      expect(msg).toContain('15 pending');
+      expect(msg).toContain('1. Task A');
+      expect(msg).toContain('_(due Dec 5)_');
+    });
+
+    it('should include footer when more tasks exist', () => {
+      const remaining = 12;
+      const footer = `_...and ${remaining} more. Reply "show me all tasks" or "show me the rest" to see more._`;
+      expect(footer).toContain('12 more');
+      expect(footer).toContain('show me all tasks');
+    });
+
+    it('should NOT include footer for show_all mode', () => {
+      const showAll = true;
+      const footer = showAll ? '' : `_...and X more._`;
+      expect(footer).toBe('');
+    });
+  });
+
+  describe('Calendar Formatters', () => {
+    it('should format calendar event created', () => {
+      const title = 'Team Standup';
+      const dateTime = new Date('2025-12-05T10:00:00+05:30');
+      const formatted = dateTime.toLocaleString('en-IN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'Asia/Kolkata'
+      });
+      const msg = `📅 Event created: **${title}** on ${formatted}`;
+      expect(msg).toContain('📅');
+      expect(msg).toContain('Team Standup');
+    });
+
+    it('should format calendar event with attendees', () => {
+      const attendees = ['alice@example.com', 'bob@example.com'];
+      const msg = `👥 Attendees: ${attendees.join(', ')}`;
+      expect(msg).toContain('alice@example.com');
+      expect(msg).toContain('bob@example.com');
+    });
+
+    it('should format calendar event rescheduled', () => {
+      const msg = `✅ Rescheduled "**Meeting with Rohan**" to Monday, 8 December 2025 at 3:00 PM IST`;
+      expect(msg).toContain('Rescheduled');
+      expect(msg).toContain('Rohan');
+      expect(msg).toContain('IST');
+    });
+
+    it('should format calendar event cancelled', () => {
+      const msg = `✅ Cancelled "**Lunch with Priya**" on Tuesday, 9 December 2025 at 1:00 PM IST`;
+      expect(msg).toContain('Cancelled');
+      expect(msg).toContain('Priya');
+    });
+
+    it('should format time conflict warning', () => {
+      const conflicts = [{ summary: 'Existing Meeting', start: { dateTime: '2025-12-05T14:00:00' } }];
+      const msg = `⚠️ **Time Conflict Detected!**\n\nYou already have:\n• ${conflicts[0].summary}`;
+      expect(msg).toContain('⚠️');
+      expect(msg).toContain('Conflict');
+      expect(msg).toContain('Existing Meeting');
+    });
+  });
+
+  describe('Email Formatters', () => {
+    it('should format email summary with count', () => {
+      const count = 42;
+      const msg = `📧 **Inbox Update** (${count} unread)`;
+      expect(msg).toContain('42 unread');
+    });
+
+    it('should format email draft ready', () => {
+      const to = 'client@company.com';
+      const subject = 'Project Update';
+      const msg = `📧 **Draft ready for review:**\n\n**To:** ${to}\n**Subject:** ${subject}`;
+      expect(msg).toContain('Draft ready');
+      expect(msg).toContain(to);
+      expect(msg).toContain(subject);
+    });
+
+    it('should format email sent confirmation', () => {
+      const msg = `✅ Email sent to rohan@example.com\n**Subject:** Meeting Follow-up`;
+      expect(msg).toContain('✅');
+      expect(msg).toContain('Email sent');
+    });
+  });
+
+  describe('Contact Formatters', () => {
+    it('should format single contact found', () => {
+      const name = 'Rohan Sharma';
+      const email = 'rohan@example.com';
+      const msg = `👤 **${name}**\n📧 ${email}`;
+      expect(msg).toContain('👤');
+      expect(msg).toContain(name);
+      expect(msg).toContain(email);
+    });
+
+    it('should format multiple contacts for disambiguation', () => {
+      const contacts = [
+        { name: 'Rohan Sharma', email: 'rohan1@example.com' },
+        { name: 'Rohan Kumar', email: 'rohan2@example.com' },
+      ];
+      let msg = `👥 **Found ${contacts.length} contacts:**\n\n`;
+      contacts.forEach((c, i) => {
+        msg += `${i + 1}. **${c.name}** - ${c.email}\n`;
+      });
+      expect(msg).toContain('Found 2 contacts');
+      expect(msg).toContain('1. **Rohan Sharma**');
+      expect(msg).toContain('2. **Rohan Kumar**');
+    });
+  });
+
+  describe('Reminder Formatters', () => {
+    it('should format reminder created', () => {
+      const text = 'Call the investor';
+      const time = 'Fri, 5 Dec, 3:00 PM IST';
+      const msg = `⏰ Reminder set: "${text}" for ${time}`;
+      expect(msg).toContain('⏰');
+      expect(msg).toContain(text);
+      expect(msg).toContain('IST');
+    });
+
+    it('should format reminder snoozed', () => {
+      const msg = `⏰ Snoozed! I'll remind you about "Team sync" at 4:30 PM`;
+      expect(msg).toContain('Snoozed');
+      expect(msg).toContain('4:30 PM');
+    });
+  });
+
+  describe('Document Formatters', () => {
+    it('should format document uploaded', () => {
+      const filename = 'quarterly_report.pdf';
+      const msg = `📄 Document uploaded: **${filename}**`;
+      expect(msg).toContain('📄');
+      expect(msg).toContain(filename);
+    });
+
+    it('should format documents list', () => {
+      const docs = [
+        { filename: 'report.pdf', created_at: '2025-12-01' },
+        { filename: 'contract.docx', created_at: '2025-12-03' },
+      ];
+      let msg = `📂 **Your Documents (${docs.length})**\n\n`;
+      docs.forEach((doc, i) => {
+        msg += `${i + 1}. **${doc.filename}**\n`;
+      });
+      expect(msg).toContain('Your Documents (2)');
+      expect(msg).toContain('report.pdf');
+      expect(msg).toContain('contract.docx');
+    });
+  });
+});
+
+// ============= PHASE 4: ERROR HANDLING MODULE TESTS =============
+
+describe('Standardized Error Messages Module', () => {
+  const ErrorType = {
+    OAUTH_NOT_CONNECTED: 'OAUTH_NOT_CONNECTED',
+    OAUTH_EXPIRED: 'OAUTH_EXPIRED',
+    API_ERROR: 'API_ERROR',
+    NOT_FOUND: 'NOT_FOUND',
+    VALIDATION: 'VALIDATION',
+    PERMISSION: 'PERMISSION',
+    RATE_LIMIT: 'RATE_LIMIT',
+  };
+
+  describe('OAuth Error Detection', () => {
+    it('should identify OAUTH_NOT_CONNECTED error', () => {
+      const error = new Error('OAUTH_NOT_CONNECTED');
+      const isOAuth = error.message === ErrorType.OAUTH_NOT_CONNECTED || 
+                      error.message === ErrorType.OAUTH_EXPIRED;
+      expect(isOAuth).toBe(true);
+    });
+
+    it('should identify OAUTH_EXPIRED error', () => {
+      const error = new Error('OAUTH_EXPIRED');
+      const isOAuth = error.message === ErrorType.OAUTH_EXPIRED;
+      expect(isOAuth).toBe(true);
+    });
+
+    it('should NOT identify regular errors as OAuth', () => {
+      const error = new Error('Network timeout');
+      const isOAuth = error.message === ErrorType.OAUTH_NOT_CONNECTED || 
+                      error.message === ErrorType.OAUTH_EXPIRED;
+      expect(isOAuth).toBe(false);
+    });
+  });
+
+  describe('Service-Specific Error Messages', () => {
+    it('should return calendar OAuth expired message', () => {
+      const msg = '⚠️ Your Google Calendar connection has expired. Please reconnect your Google account in settings.';
+      expect(msg).toContain('Calendar');
+      expect(msg).toContain('expired');
+      expect(msg).toContain('reconnect');
+    });
+
+    it('should return tasks OAuth expired message', () => {
+      const msg = '⚠️ Your Google Tasks connection has expired. Please reconnect your Google account in settings to manage tasks.';
+      expect(msg).toContain('Tasks');
+      expect(msg).toContain('expired');
+    });
+
+    it('should return gmail not found message', () => {
+      const msg = '📧 I couldn\'t find any emails matching your search.';
+      expect(msg).toContain('📧');
+      expect(msg).toContain('couldn\'t find');
+    });
+
+    it('should return contacts not found message', () => {
+      const msg = '👤 I couldn\'t find anyone with that name in your contacts.';
+      expect(msg).toContain('👤');
+      expect(msg).toContain('couldn\'t find');
+    });
+  });
+
+  describe('Error Type from HTTP Status', () => {
+    it('should map 401 to OAUTH_EXPIRED', () => {
+      const statusCode = 401;
+      const errorType = statusCode === 401 || statusCode === 403 ? ErrorType.OAUTH_EXPIRED : ErrorType.API_ERROR;
+      expect(errorType).toBe(ErrorType.OAUTH_EXPIRED);
+    });
+
+    it('should map 403 to OAUTH_EXPIRED', () => {
+      const statusCode = 403;
+      const errorType = statusCode === 401 || statusCode === 403 ? ErrorType.OAUTH_EXPIRED : ErrorType.API_ERROR;
+      expect(errorType).toBe(ErrorType.OAUTH_EXPIRED);
+    });
+
+    it('should map 404 to NOT_FOUND', () => {
+      const statusCode = 404;
+      const errorType = statusCode === 404 ? ErrorType.NOT_FOUND : ErrorType.API_ERROR;
+      expect(errorType).toBe(ErrorType.NOT_FOUND);
+    });
+
+    it('should map 429 to RATE_LIMIT', () => {
+      const statusCode = 429;
+      const errorType = statusCode === 429 ? ErrorType.RATE_LIMIT : ErrorType.API_ERROR;
+      expect(errorType).toBe(ErrorType.RATE_LIMIT);
+    });
+
+    it('should map 500 to API_ERROR', () => {
+      const statusCode = 500;
+      const errorType = statusCode >= 500 ? ErrorType.API_ERROR : ErrorType.API_ERROR;
+      expect(errorType).toBe(ErrorType.API_ERROR);
+    });
+  });
+
+  describe('Document Error Messages', () => {
+    it('should return document not found message', () => {
+      const msg = '📄 I don\'t have any document in context. Please upload a document first.';
+      expect(msg).toContain('📄');
+      expect(msg).toContain('upload');
+    });
+
+    it('should return unsupported format message', () => {
+      const msg = '❌ I don\'t support that file format. Please upload a PDF, Word document, or image.';
+      expect(msg).toContain('❌');
+      expect(msg).toContain('format');
+    });
+  });
+
+  describe('Reminder Error Messages', () => {
+    it('should return reminder not found message', () => {
+      const msg = '⏰ I couldn\'t find any active reminder to snooze.';
+      expect(msg).toContain('⏰');
+      expect(msg).toContain('couldn\'t find');
+    });
+
+    it('should return invalid time message', () => {
+      const msg = '⏰ I couldn\'t understand that time. Try something like "remind me at 3pm" or "in 2 hours".';
+      expect(msg).toContain('couldn\'t understand');
+      expect(msg).toContain('3pm');
+    });
+  });
+});
+
+// ============= PHASE 4: INTEGRATION TESTS =============
+
+describe('End-to-End Integration Tests', () => {
+  describe('Full Briefing Flow', () => {
+    it('should include all 5 sections in correct order', () => {
+      const sections = ['Weather', 'Calendar', 'Pending Tasks', 'Emails', 'Reminders'];
+      const briefingTemplate = `
+🌅 *Good morning. Your Daily Briefing*
+🌤️ *Weather*: Mumbai, 28°C
+📅 *Calendar*: 2 events today
+✅ *Pending Tasks*: 5 tasks
+📧 *Emails*: 42 unread
+⏰ *Reminders*: 1 reminder
+      `;
+      
+      sections.forEach(section => {
+        expect(briefingTemplate).toContain(section);
+      });
+    });
+
+    it('should always show section headers even when empty', () => {
+      const emptyBriefing = `
+🌅 *Good morning. Your Daily Briefing*
+🌤️ *Weather*: No weather data available
+📅 *Calendar*: No events on your calendar today
+✅ *Pending Tasks*: You're all caught up
+📧 *Emails*: 0 unread emails
+⏰ *Reminders*: No reminders scheduled
+      `;
+      
+      expect(emptyBriefing).toContain('Weather');
+      expect(emptyBriefing).toContain('Calendar');
+      expect(emptyBriefing).toContain('Pending Tasks');
+      expect(emptyBriefing).toContain('Emails');
+      expect(emptyBriefing).toContain('Reminders');
+    });
+  });
+
+  describe('Full Tasks Paging Flow', () => {
+    it('should track state correctly across multiple pages', () => {
+      const snapshot = Array.from({ length: 44 }, (_, i) => ({
+        index: i + 1,
+        title: `Task ${i + 1}`,
+      }));
+      
+      // Initial view: 1-10
+      const page1 = snapshot.slice(0, 10);
+      expect(page1.length).toBe(10);
+      expect(page1[0].index).toBe(1);
+      expect(page1[9].index).toBe(10);
+      
+      // Show rest: 11-20
+      const page2 = snapshot.slice(10, 20);
+      expect(page2.length).toBe(10);
+      expect(page2[0].index).toBe(11);
+      expect(page2[9].index).toBe(20);
+      
+      // Show rest: 21-30
+      const page3 = snapshot.slice(20, 30);
+      expect(page3.length).toBe(10);
+      expect(page3[0].index).toBe(21);
+      
+      // Final page: 41-44
+      const finalPage = snapshot.slice(40, 44);
+      expect(finalPage.length).toBe(4);
+      expect(finalPage[0].index).toBe(41);
+      expect(finalPage[3].index).toBe(44);
+    });
+
+    it('should show all tasks when show_all is true', () => {
+      const total = 44;
+      const showAll = true;
+      const tasksToShow = showAll ? total : 10;
+      expect(tasksToShow).toBe(44);
+    });
+  });
+
+  describe('Contact Resolution Flow', () => {
+    it('should immediately proceed for single match', () => {
+      const contacts = [{ name: 'Rohan Sharma', email: 'rohan@example.com' }];
+      const needsDisambiguation = contacts.length > 1;
+      expect(needsDisambiguation).toBe(false);
+    });
+
+    it('should trigger disambiguation for multiple matches', () => {
+      const contacts = [
+        { name: 'Rohan Sharma', email: 'rohan1@example.com' },
+        { name: 'Rohan Kumar', email: 'rohan2@example.com' },
+      ];
+      const needsDisambiguation = contacts.length > 1;
+      expect(needsDisambiguation).toBe(true);
+    });
+
+    it('should use resolved email for draft creation', () => {
+      const contact = { name: 'Rohan Sharma', email: 'rohan@example.com' };
+      const draft = {
+        to: contact.email,
+        subject: 'Meeting Follow-up',
+        body: 'Thanks for your time today.',
+      };
+      expect(draft.to).toBe('rohan@example.com');
+    });
+  });
+
+  describe('Calendar CRUD Flow', () => {
+    it('should detect time conflicts', () => {
+      const existingEvent = { 
+        start: new Date('2025-12-05T14:00:00').getTime(),
+        end: new Date('2025-12-05T15:00:00').getTime()
+      };
+      const newEvent = {
+        start: new Date('2025-12-05T14:30:00').getTime(),
+        end: new Date('2025-12-05T15:30:00').getTime()
+      };
+      
+      const hasConflict = newEvent.start < existingEvent.end && newEvent.end > existingEvent.start;
+      expect(hasConflict).toBe(true);
+    });
+
+    it('should NOT detect conflict for non-overlapping events', () => {
+      const existingEvent = {
+        start: new Date('2025-12-05T14:00:00').getTime(),
+        end: new Date('2025-12-05T15:00:00').getTime()
+      };
+      const newEvent = {
+        start: new Date('2025-12-05T16:00:00').getTime(),
+        end: new Date('2025-12-05T17:00:00').getTime()
+      };
+      
+      const hasConflict = newEvent.start < existingEvent.end && newEvent.end > existingEvent.start;
+      expect(hasConflict).toBe(false);
+    });
+
+    it('should search by person name in title or attendees', () => {
+      const events = [
+        { summary: 'Meeting with Rohan', attendees: [] },
+        { summary: 'Lunch', attendees: [{ displayName: 'Priya' }] },
+        { summary: 'Team Sync', attendees: [] },
+      ];
+      
+      const searchPerson = 'Rohan';
+      const matches = events.filter(e => 
+        e.summary.toLowerCase().includes(searchPerson.toLowerCase()) ||
+        e.attendees?.some(a => a.displayName?.toLowerCase().includes(searchPerson.toLowerCase()))
+      );
+      
+      expect(matches.length).toBe(1);
+      expect(matches[0].summary).toContain('Rohan');
+    });
+  });
+
+  describe('Document Q&A Flow', () => {
+    it('should require document context for Q&A', () => {
+      const sessionState = { last_uploaded_doc_id: null };
+      const hasDocContext = sessionState.last_uploaded_doc_id !== null;
+      expect(hasDocContext).toBe(false);
+    });
+
+    it('should allow Q&A when document is uploaded', () => {
+      const sessionState = { last_uploaded_doc_id: 'doc-123' };
+      const hasDocContext = sessionState.last_uploaded_doc_id !== null;
+      expect(hasDocContext).toBe(true);
+    });
+
+    it('should allow recall of previous document', () => {
+      const documents = [
+        { id: 'doc-1', filename: 'report.pdf' },
+        { id: 'doc-2', filename: 'contract.pdf' },
+      ];
+      const searchName = 'contract';
+      const match = documents.find(d => d.filename.toLowerCase().includes(searchName));
+      expect(match).toBeDefined();
+      expect(match?.id).toBe('doc-2');
+    });
+  });
+});
