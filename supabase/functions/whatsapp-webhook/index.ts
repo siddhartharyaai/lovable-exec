@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getDocument } from 'https://esm.sh/pdfjs-serverless@0.2.1';
+import { verifyTwilioRequest, getCanonicalWebhookUrl } from '../_shared/twilio-verify.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -181,12 +182,6 @@ async function extractTextFromDocument(buffer: ArrayBuffer, mimeType: string, tr
   }
 }
 
-// Verify Twilio signature
-function verifyTwilioSignature(signature: string, url: string, params: Record<string, string>): boolean {
-  // For now, basic implementation - in production, use crypto for proper verification
-  return signature.length > 0; // TODO: Implement proper HMAC-SHA256 verification
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -203,12 +198,19 @@ serve(async (req) => {
       params[key] = value.toString();
     }
 
+    // Security: Verify Twilio signature
     const twilioSignature = req.headers.get('X-Twilio-Signature') || '';
-    const url = new URL(req.url).toString();
+    const webhookUrl = getCanonicalWebhookUrl(req);
     
-    // Verify signature
-    if (!verifyTwilioSignature(twilioSignature, url, params)) {
-      console.error(`[${traceId}] Invalid Twilio signature`);
+    const { valid, reason } = await verifyTwilioRequest(
+      twilioSignature,
+      webhookUrl,
+      params,
+      traceId
+    );
+    
+    if (!valid) {
+      console.error(`[${traceId}] ❌ Twilio signature verification failed: ${reason}`);
       return new Response('Unauthorized', { status: 401 });
     }
 
