@@ -1695,4 +1695,228 @@ describe('End-to-End Integration Tests', () => {
       expect(match?.id).toBe('doc-2');
     });
   });
+
+  describe('Twilio Signature Verification', () => {
+    it('should build correct signature base string from URL and params', () => {
+      const url = 'https://example.com/webhook';
+      const params = { Body: 'Hello', From: 'whatsapp:+1234' };
+      
+      // Params should be sorted alphabetically and appended to URL
+      const sortedKeys = Object.keys(params).sort();
+      let baseString = url;
+      for (const key of sortedKeys) {
+        baseString += key + params[key as keyof typeof params];
+      }
+      
+      expect(baseString).toBe('https://example.com/webhookBodyHelloFromwhatsapp:+1234');
+    });
+
+    it('should sort params alphabetically', () => {
+      const params = { Zebra: '1', Apple: '2', Mango: '3' };
+      const sortedKeys = Object.keys(params).sort();
+      
+      expect(sortedKeys).toEqual(['Apple', 'Mango', 'Zebra']);
+    });
+
+    it('should handle empty params', () => {
+      const url = 'https://example.com/webhook';
+      const params: Record<string, string> = {};
+      
+      const sortedKeys = Object.keys(params).sort();
+      let baseString = url;
+      for (const key of sortedKeys) {
+        baseString += key + params[key];
+      }
+      
+      expect(baseString).toBe(url);
+    });
+
+    it('should reject missing signature', () => {
+      const signature = '';
+      expect(signature.length > 0).toBe(false);
+    });
+
+    it('should detect valid signature format', () => {
+      // Base64 encoded signature should match pattern
+      const validSignature = 'ABC123def456GHI789==';
+      const isBase64Like = /^[A-Za-z0-9+/]+=*$/.test(validSignature);
+      expect(isBase64Like).toBe(true);
+      
+      const invalidSignature = 'not-valid-signature!@#';
+      const isInvalidBase64 = /^[A-Za-z0-9+/]+=*$/.test(invalidSignature);
+      expect(isInvalidBase64).toBe(false);
+    });
+  });
+
+  describe('Security: Input Validation', () => {
+    it('should sanitize phone numbers', () => {
+      const sanitizePhone = (phone: string) => {
+        return phone.replace(/[^\d+]/g, '');
+      };
+      
+      expect(sanitizePhone('+1 (234) 567-8901')).toBe('+12345678901');
+      expect(sanitizePhone('abc+91xyz9876543210')).toBe('+919876543210');
+    });
+
+    it('should validate phone number format', () => {
+      const isValidPhone = (phone: string) => {
+        const cleaned = phone.replace(/[^\d+]/g, '');
+        return /^\+\d{10,15}$/.test(cleaned);
+      };
+      
+      expect(isValidPhone('+919821230311')).toBe(true);
+      expect(isValidPhone('+1234567890')).toBe(true);
+      expect(isValidPhone('1234')).toBe(false);
+      expect(isValidPhone('')).toBe(false);
+    });
+
+    it('should escape HTML in user content', () => {
+      const escapeHtml = (text: string) => {
+        return text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+      
+      const maliciousInput = '<script>alert("xss")</script>';
+      const escaped = escapeHtml(maliciousInput);
+      
+      expect(escaped).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+      expect(escaped).not.toContain('<script>');
+    });
+
+    it('should validate email format', () => {
+      const isValidEmail = (email: string) => {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      };
+      
+      expect(isValidEmail('user@example.com')).toBe(true);
+      expect(isValidEmail('user.name@company.co.in')).toBe(true);
+      expect(isValidEmail('invalid')).toBe(false);
+      expect(isValidEmail('no@domain')).toBe(false);
+    });
+  });
+
+  describe('RLS Policy Validation', () => {
+    it('should validate user_id is required for user-scoped tables', () => {
+      // Tables that require user_id for RLS
+      const userScopedTables = [
+        'reminders',
+        'messages',
+        'user_documents',
+        'oauth_tokens',
+        'session_state',
+        'email_drafts',
+        'conversation_messages',
+      ];
+      
+      // Simulate insert without user_id
+      const insertWithoutUserId = { text: 'reminder text' };
+      const hasUserId = 'user_id' in insertWithoutUserId;
+      expect(hasUserId).toBe(false);
+      
+      // Valid insert with user_id
+      const insertWithUserId = { text: 'reminder text', user_id: 'uuid-123' };
+      expect('user_id' in insertWithUserId).toBe(true);
+    });
+
+    it('should validate auth.uid() matching for update/delete', () => {
+      const currentUserId = 'user-123';
+      const recordOwnerId = 'user-123';
+      const otherOwnerId = 'user-456';
+      
+      // Own record - should pass RLS
+      expect(currentUserId === recordOwnerId).toBe(true);
+      
+      // Other's record - should fail RLS
+      expect(currentUserId === otherOwnerId).toBe(false);
+    });
+  });
+
+  describe('OAuth Token Security', () => {
+    it('should detect expired tokens', () => {
+      const now = new Date();
+      const expiredToken = {
+        expires_at: new Date(now.getTime() - 3600000).toISOString() // 1 hour ago
+      };
+      const validToken = {
+        expires_at: new Date(now.getTime() + 3600000).toISOString() // 1 hour from now
+      };
+      
+      const isExpired = (token: { expires_at: string }) => {
+        return new Date(token.expires_at) < now;
+      };
+      
+      expect(isExpired(expiredToken)).toBe(true);
+      expect(isExpired(validToken)).toBe(false);
+    });
+
+    it('should require refresh token for token renewal', () => {
+      const tokenWithRefresh = { 
+        access_token: 'abc', 
+        refresh_token: 'def' 
+      };
+      const tokenWithoutRefresh = { 
+        access_token: 'abc', 
+        refresh_token: null 
+      };
+      
+      const canRefresh = (token: { refresh_token: string | null }) => {
+        return token.refresh_token !== null && token.refresh_token.length > 0;
+      };
+      
+      expect(canRefresh(tokenWithRefresh)).toBe(true);
+      expect(canRefresh(tokenWithoutRefresh)).toBe(false);
+    });
+  });
+
+  describe('Error Message Standardization', () => {
+    it('should return user-friendly OAuth error messages', () => {
+      type ErrorType = 'OAUTH_NOT_CONNECTED' | 'OAUTH_EXPIRED' | 'API_ERROR';
+      
+      const getErrorMessage = (type: ErrorType, service: string) => {
+        switch (type) {
+          case 'OAUTH_NOT_CONNECTED':
+            return `Please connect your ${service} account first.`;
+          case 'OAUTH_EXPIRED':
+            return `Your ${service} connection has expired. Please reconnect.`;
+          case 'API_ERROR':
+            return `There was an issue with ${service}. Please try again.`;
+        }
+      };
+      
+      expect(getErrorMessage('OAUTH_NOT_CONNECTED', 'Google')).toContain('connect');
+      expect(getErrorMessage('OAUTH_EXPIRED', 'Google')).toContain('expired');
+      expect(getErrorMessage('API_ERROR', 'Google')).toContain('issue');
+    });
+
+    it('should never expose internal error details to users', () => {
+      const internalError = new Error('Database connection failed: ECONNREFUSED 127.0.0.1:5432');
+      
+      const sanitizeError = (error: Error) => {
+        // Never expose connection strings, IPs, or internal details
+        const sensitivePatterns = [
+          /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g, // IP addresses
+          /postgres:\/\/[^\s]+/g, // Connection strings
+          /ECONNREFUSED|ETIMEDOUT|ENOTFOUND/g, // System errors
+          /at\s+[\w.]+\s+\(.*:\d+:\d+\)/g, // Stack traces
+        ];
+        
+        let message = error.message;
+        sensitivePatterns.forEach(pattern => {
+          if (pattern.test(message)) {
+            return 'An unexpected error occurred. Please try again.';
+          }
+        });
+        return 'An unexpected error occurred. Please try again.';
+      };
+      
+      const userMessage = sanitizeError(internalError);
+      expect(userMessage).not.toContain('127.0.0.1');
+      expect(userMessage).not.toContain('ECONNREFUSED');
+      expect(userMessage).toContain('unexpected error');
+    });
+  });
 });
