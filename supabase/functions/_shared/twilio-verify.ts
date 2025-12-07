@@ -155,46 +155,31 @@ export async function verifyTwilioRequest(
     return { valid: false, reason: 'missing_signature' };
   }
   
-  // Build list of URLs to try - Twilio signs with the URL it was configured with
-  // We need to try multiple formats because:
-  // 1. Twilio might be configured with different URL paths
-  // 2. Internal request.url might differ from public URL
-  // 3. HTTP vs HTTPS variations
+  // Build list of URLs to try - Twilio signs with the EXACT URL configured in their dashboard
+  // The request.url we receive internally may differ from what Twilio configured
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const projectRef = supabaseUrl?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || 'kxeylftnzwhqxguduwoq';
   const urlsToTry: string[] = [];
   
-  // CRITICAL: If we have the actual request URL, try its HTTPS version FIRST
-  // This is what Twilio actually signed the request with
-  if (requestUrl) {
-    // Try HTTPS version of exact request URL (most likely to match)
-    const httpsRequestUrl = requestUrl.replace('http://', 'https://');
-    if (!urlsToTry.includes(httpsRequestUrl)) {
-      urlsToTry.push(httpsRequestUrl);
-    }
-    // Also try the HTTP version in case Twilio configured with HTTP
-    if (!urlsToTry.includes(requestUrl)) {
-      urlsToTry.push(requestUrl);
-    }
-  }
+  // CRITICAL: Twilio is configured with custom domain format + /twiml suffix
+  // This is the EXACT URL Twilio signs requests with (from logs):
+  // https://kxeylftnzwhqxguduwoq.supabase.co/whatsapp-webhook/twiml
+  const twilioConfiguredUrl = `https://${projectRef}.supabase.co/whatsapp-webhook/twiml`;
+  urlsToTry.push(twilioConfiguredUrl);
+  
+  // Also try without /twiml in case user updates Twilio config
+  urlsToTry.push(`https://${projectRef}.supabase.co/whatsapp-webhook`);
   
   // Try the canonical Supabase Edge Function URL format
   if (supabaseUrl) {
-    const canonicalUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook`;
-    if (!urlsToTry.includes(canonicalUrl)) {
-      urlsToTry.push(canonicalUrl);
-    }
+    urlsToTry.push(`${supabaseUrl}/functions/v1/whatsapp-webhook`);
   }
   
-  // Fallback: Original URL passed in (from getCanonicalWebhookUrl)
-  if (url && !urlsToTry.includes(url)) {
-    urlsToTry.push(url);
-  }
-  
-  // Fallback: Ensure HTTPS variant of url parameter
-  if (url && url.startsWith('http://')) {
-    const httpsUrl = url.replace('http://', 'https://');
-    if (!urlsToTry.includes(httpsUrl)) {
-      urlsToTry.push(httpsUrl);
+  // If we have the actual request URL, try HTTPS version
+  if (requestUrl) {
+    const httpsRequestUrl = requestUrl.replace('http://', 'https://');
+    if (!urlsToTry.includes(httpsRequestUrl)) {
+      urlsToTry.push(httpsRequestUrl);
     }
   }
   
