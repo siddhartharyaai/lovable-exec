@@ -202,23 +202,26 @@ serve(async (req) => {
     const twilioSignature = req.headers.get('X-Twilio-Signature') || '';
     const webhookUrl = getCanonicalWebhookUrl(req);
     
+    // Get the raw request URL - this is what Twilio actually signed the request with
+    const rawRequestUrl = req.url;
+    
     // Debug logging for signature verification
     console.log(`[${traceId}] 🔍 === SIGNATURE VERIFICATION DEBUG ===`);
+    console.log(`[${traceId}] 🔍 Raw Request URL (what Twilio signed): ${rawRequestUrl}`);
     console.log(`[${traceId}] 🔍 Canonical URL: ${webhookUrl}`);
-    console.log(`[${traceId}] 🔍 Request URL: ${req.url}`);
     console.log(`[${traceId}] 🔍 Signature present: ${twilioSignature ? 'YES' : 'NO'}`);
-    console.log(`[${traceId}] 🔍 Param keys: ${Object.keys(params).join(', ')}`);
+    console.log(`[${traceId}] 🔍 Param count: ${Object.keys(params).length}`);
     
     const { valid, reason } = await verifyTwilioRequest(
       twilioSignature,
       webhookUrl,
       params,
-      traceId
+      traceId,
+      rawRequestUrl // Pass the actual request URL for verification
     );
     
     if (!valid) {
       console.error(`[${traceId}] ❌ Twilio signature verification failed: ${reason}`);
-      console.error(`[${traceId}] ❌ SUPABASE_URL env: ${Deno.env.get('SUPABASE_URL') || 'NOT SET'}`);
       return new Response('Unauthorized', { status: 401 });
     }
 

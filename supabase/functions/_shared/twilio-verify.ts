@@ -138,7 +138,8 @@ export async function verifyTwilioRequest(
   signature: string,
   url: string,
   params: Record<string, string>,
-  traceId: string
+  traceId: string,
+  requestUrl?: string // The actual request.url from the incoming request
 ): Promise<{ valid: boolean; reason: string }> {
   const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
   
@@ -154,21 +155,42 @@ export async function verifyTwilioRequest(
     return { valid: false, reason: 'missing_signature' };
   }
   
-  // Build list of URLs to try - Twilio may sign with different URL formats
+  // Build list of URLs to try - Twilio signs with the URL it was configured with
+  // We need to try multiple formats because:
+  // 1. Twilio might be configured with different URL paths
+  // 2. Internal request.url might differ from public URL
+  // 3. HTTP vs HTTPS variations
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const urlsToTry: string[] = [];
   
-  // Primary: Use the known public Supabase URL format
-  if (supabaseUrl) {
-    urlsToTry.push(`${supabaseUrl}/functions/v1/whatsapp-webhook`);
+  // CRITICAL: If we have the actual request URL, try its HTTPS version FIRST
+  // This is what Twilio actually signed the request with
+  if (requestUrl) {
+    // Try HTTPS version of exact request URL (most likely to match)
+    const httpsRequestUrl = requestUrl.replace('http://', 'https://');
+    if (!urlsToTry.includes(httpsRequestUrl)) {
+      urlsToTry.push(httpsRequestUrl);
+    }
+    // Also try the HTTP version in case Twilio configured with HTTP
+    if (!urlsToTry.includes(requestUrl)) {
+      urlsToTry.push(requestUrl);
+    }
   }
   
-  // Fallback: Original URL passed in (from request)
+  // Try the canonical Supabase Edge Function URL format
+  if (supabaseUrl) {
+    const canonicalUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook`;
+    if (!urlsToTry.includes(canonicalUrl)) {
+      urlsToTry.push(canonicalUrl);
+    }
+  }
+  
+  // Fallback: Original URL passed in (from getCanonicalWebhookUrl)
   if (url && !urlsToTry.includes(url)) {
     urlsToTry.push(url);
   }
   
-  // Fallback: Ensure HTTPS variant
+  // Fallback: Ensure HTTPS variant of url parameter
   if (url && url.startsWith('http://')) {
     const httpsUrl = url.replace('http://', 'https://');
     if (!urlsToTry.includes(httpsUrl)) {
@@ -176,7 +198,8 @@ export async function verifyTwilioRequest(
     }
   }
   
-  console.log(`[${traceId}] 🔍 Verifying signature against ${urlsToTry.length} URL(s)`);
+  console.log(`[${traceId}] 🔍 Verifying signature against ${urlsToTry.length} URL(s):`);
+  urlsToTry.forEach((u, i) => console.log(`[${traceId}] 🔍   ${i + 1}. ${u}`));
   
   // Try each URL format
   for (const tryUrl of urlsToTry) {
@@ -188,8 +211,7 @@ export async function verifyTwilioRequest(
   }
   
   // All attempts failed - log details for debugging
-  console.error(`[${traceId}] ❌ Signature verification failed for all URL attempts`);
-  console.error(`[${traceId}] 🔍 Attempted URLs: ${JSON.stringify(urlsToTry)}`);
+  console.error(`[${traceId}] ❌ Signature verification failed for all ${urlsToTry.length} URL attempts`);
   console.error(`[${traceId}] 🔍 Signature received: ${signature.substring(0, 20)}...`);
   
   return { valid: false, reason: 'invalid_signature' };
