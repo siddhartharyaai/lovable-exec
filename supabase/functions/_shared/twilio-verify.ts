@@ -154,16 +154,45 @@ export async function verifyTwilioRequest(
     return { valid: false, reason: 'missing_signature' };
   }
   
-  // Verify signature
-  const isValid = await verifyTwilioSignature(signature, url, params, authToken);
+  // Build list of URLs to try - Twilio may sign with different URL formats
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const urlsToTry: string[] = [];
   
-  if (isValid) {
-    console.log(`[${traceId}] ✅ Twilio signature verified`);
-    return { valid: true, reason: 'verified' };
-  } else {
-    console.error(`[${traceId}] ❌ Invalid Twilio signature`);
-    return { valid: false, reason: 'invalid_signature' };
+  // Primary: Use the known public Supabase URL format
+  if (supabaseUrl) {
+    urlsToTry.push(`${supabaseUrl}/functions/v1/whatsapp-webhook`);
   }
+  
+  // Fallback: Original URL passed in (from request)
+  if (url && !urlsToTry.includes(url)) {
+    urlsToTry.push(url);
+  }
+  
+  // Fallback: Ensure HTTPS variant
+  if (url && url.startsWith('http://')) {
+    const httpsUrl = url.replace('http://', 'https://');
+    if (!urlsToTry.includes(httpsUrl)) {
+      urlsToTry.push(httpsUrl);
+    }
+  }
+  
+  console.log(`[${traceId}] 🔍 Verifying signature against ${urlsToTry.length} URL(s)`);
+  
+  // Try each URL format
+  for (const tryUrl of urlsToTry) {
+    const isValid = await verifyTwilioSignature(signature, tryUrl, params, authToken);
+    if (isValid) {
+      console.log(`[${traceId}] ✅ Twilio signature verified with URL: ${tryUrl}`);
+      return { valid: true, reason: 'verified' };
+    }
+  }
+  
+  // All attempts failed - log details for debugging
+  console.error(`[${traceId}] ❌ Signature verification failed for all URL attempts`);
+  console.error(`[${traceId}] 🔍 Attempted URLs: ${JSON.stringify(urlsToTry)}`);
+  console.error(`[${traceId}] 🔍 Signature received: ${signature.substring(0, 20)}...`);
+  
+  return { valid: false, reason: 'invalid_signature' };
 }
 
 /**
@@ -171,13 +200,24 @@ export async function verifyTwilioRequest(
  * 
  * Twilio signs requests using the URL they called.
  * For edge functions, this is typically the Supabase function URL.
+ * 
+ * IMPORTANT: Supabase Edge Functions may report internal URLs in request.url
+ * that differ from the public URL Twilio used to sign the request.
+ * We prioritize the known public URL format.
  */
 export function getCanonicalWebhookUrl(request: Request): string {
-  // Use the URL from the request
+  // Primary: Use SUPABASE_URL to construct the known public URL
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  if (supabaseUrl) {
+    return `${supabaseUrl}/functions/v1/whatsapp-webhook`;
+  }
+  
+  // Fallback: Use the URL from the request (may not match Twilio's signature)
   const url = new URL(request.url);
   
   // Remove query parameters - Twilio doesn't include them in signature
   url.search = '';
   
+  console.warn('[twilio-verify] ⚠️ SUPABASE_URL not set, using request.url as fallback');
   return url.toString();
 }
