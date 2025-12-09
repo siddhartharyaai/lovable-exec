@@ -149,70 +149,45 @@ export async function verifyTwilioRequest(
     return { valid: true, reason: 'dev_mode' };
   }
   
-  // TEMPORARY: Bypass signature verification due to Supabase URL routing complexity
-  // Supabase Edge Functions receive internal URLs that don't match what Twilio configured
-  // This is safe because: 1) Function is not publicly documented, 2) Twilio-specific params validate source
-  // TODO: Re-enable once we can reliably determine Twilio's configured URL
-  const bypassSignatureCheck = Deno.env.get('BYPASS_TWILIO_SIGNATURE') === 'true';
-  if (bypassSignatureCheck) {
-    console.warn(`[${traceId}] ⚠️ Twilio signature verification BYPASSED (BYPASS_TWILIO_SIGNATURE=true)`);
-    // Still validate that this looks like a Twilio request
-    if (params.AccountSid && params.From?.includes('whatsapp:') && params.MessageSid) {
-      console.log(`[${traceId}] ✅ Request appears to be from Twilio (has AccountSid, From, MessageSid)`);
-      return { valid: true, reason: 'bypass_with_validation' };
-    }
-    console.warn(`[${traceId}] ⚠️ Request doesn't look like Twilio - missing expected params`);
-  }
-  
   // No signature provided
   if (!signature) {
     console.error(`[${traceId}] ❌ Missing X-Twilio-Signature header`);
     return { valid: false, reason: 'missing_signature' };
   }
   
-  // Build list of URLs to try - Twilio signs with the EXACT URL configured in their dashboard
-  // The request.url we receive internally may differ from what Twilio configured
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const projectRef = supabaseUrl?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || 'kxeylftnzwhqxguduwoq';
-  const urlsToTry: string[] = [];
+  // CRITICAL: Use the EXACT URL configured in Twilio Console
+  // User has confirmed: https://kxeylftnzwhqxguduwoq.supabase.co/functions/v1/whatsapp-webhook
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://kxeylftnzwhqxguduwoq.supabase.co';
   
-  // CRITICAL: Twilio is configured with custom domain format + /twiml suffix
-  // This is the EXACT URL Twilio signs requests with (from logs):
-  // https://kxeylftnzwhqxguduwoq.supabase.co/whatsapp-webhook/twiml
-  const twilioConfiguredUrl = `https://${projectRef}.supabase.co/whatsapp-webhook/twiml`;
-  urlsToTry.push(twilioConfiguredUrl);
+  // Primary URL - the exact URL configured in Twilio (confirmed by user)
+  const primaryUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook`;
   
-  // Also try without /twiml in case user updates Twilio config
-  urlsToTry.push(`https://${projectRef}.supabase.co/whatsapp-webhook`);
+  console.log(`[${traceId}] 🔍 Verifying signature with URL: ${primaryUrl}`);
   
-  // Try the canonical Supabase Edge Function URL format
-  if (supabaseUrl) {
-    urlsToTry.push(`${supabaseUrl}/functions/v1/whatsapp-webhook`);
+  const isValid = await verifyTwilioSignature(signature, primaryUrl, params, authToken);
+  if (isValid) {
+    console.log(`[${traceId}] ✅ Twilio signature verified successfully`);
+    return { valid: true, reason: 'verified' };
   }
   
-  // If we have the actual request URL, try HTTPS version
+  // If primary fails, try the actual request URL (HTTPS converted)
   if (requestUrl) {
     const httpsRequestUrl = requestUrl.replace('http://', 'https://');
-    if (!urlsToTry.includes(httpsRequestUrl)) {
-      urlsToTry.push(httpsRequestUrl);
+    if (httpsRequestUrl !== primaryUrl) {
+      console.log(`[${traceId}] 🔍 Trying actual request URL: ${httpsRequestUrl}`);
+      const isValidAlt = await verifyTwilioSignature(signature, httpsRequestUrl, params, authToken);
+      if (isValidAlt) {
+        console.log(`[${traceId}] ✅ Twilio signature verified with request URL`);
+        return { valid: true, reason: 'verified' };
+      }
     }
   }
   
-  console.log(`[${traceId}] 🔍 Verifying signature against ${urlsToTry.length} URL(s):`);
-  urlsToTry.forEach((u, i) => console.log(`[${traceId}] 🔍   ${i + 1}. ${u}`));
-  
-  // Try each URL format
-  for (const tryUrl of urlsToTry) {
-    const isValid = await verifyTwilioSignature(signature, tryUrl, params, authToken);
-    if (isValid) {
-      console.log(`[${traceId}] ✅ Twilio signature verified with URL: ${tryUrl}`);
-      return { valid: true, reason: 'verified' };
-    }
-  }
-  
-  // All attempts failed - log details for debugging
-  console.error(`[${traceId}] ❌ Signature verification failed for all ${urlsToTry.length} URL attempts`);
-  console.error(`[${traceId}] 🔍 Signature received: ${signature.substring(0, 20)}...`);
+  // Signature verification failed
+  console.error(`[${traceId}] ❌ Signature verification FAILED`);
+  console.error(`[${traceId}] 🔍 Expected URL: ${primaryUrl}`);
+  console.error(`[${traceId}] 🔍 Request URL: ${requestUrl || 'not provided'}`);
+  console.error(`[${traceId}] 🔍 Signature (first 20 chars): ${signature.substring(0, 20)}...`);
   
   return { valid: false, reason: 'invalid_signature' };
 }
