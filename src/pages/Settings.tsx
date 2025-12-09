@@ -36,6 +36,9 @@ const Settings = () => {
   });
   const [isSavingBriefing, setIsSavingBriefing] = useState(false);
 
+  // Get phone from profile
+  const phoneNumber = profile?.phone || "";
+
   // Initialize from profile
   useEffect(() => {
     if (profile) {
@@ -44,53 +47,65 @@ const Settings = () => {
       setUserEmail(profile.email || "");
       if (profile.briefing_time) setBriefingTime(profile.briefing_time);
       if (profile.gmail_tab_preference) setGmailTabPreference(profile.gmail_tab_preference);
-      if (profile.briefing_sections) setBriefingSections(profile.briefing_sections as any);
+      if (profile.briefing_sections) setBriefingSections(profile.briefing_sections as typeof briefingSections);
       setDailyBriefing(profile.daily_briefing_enabled);
       setBirthdayReminders(profile.birthday_reminders_enabled);
-      
-      if (profile.phone) {
-        fetchLegacyUserId(profile.phone);
-      }
     }
   }, [profile]);
 
-  const fetchLegacyUserId = async (phone: string) => {
-    const { data } = await supabase
-      .from('users')
-      .select('id')
-      .eq('phone', phone)
-      .maybeSingle();
-    if (data) {
-      setLegacyUserId(data.id);
-      checkGoogleConnection(data.id);
-    } else {
+  // Check Google connection using authenticated user
+  const checkGoogleConnection = async () => {
+    if (!user) {
       setIsLoadingGoogle(false);
+      return;
     }
-  };
-
-  const checkGoogleConnection = async (userId: string) => {
+    
     try {
-      const { data } = await supabase
+      // First check oauth_tokens with auth user id
+      const { data: tokenData } = await supabase
         .from('oauth_tokens')
         .select('id')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('provider', 'google')
         .maybeSingle();
-      setIsGoogleConnected(!!data);
+      
+      if (tokenData) {
+        setIsGoogleConnected(true);
+        setIsLoadingGoogle(false);
+        return;
+      }
+
+      // Fallback: check via phone in legacy users table
+      if (phoneNumber) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('id')
+          .eq('phone', phoneNumber)
+          .maybeSingle();
+
+        if (userData) {
+          setLegacyUserId(userData.id);
+          const { data: legacyToken } = await supabase
+            .from('oauth_tokens')
+            .select('id')
+            .eq('user_id', userData.id)
+            .eq('provider', 'google')
+            .maybeSingle();
+          setIsGoogleConnected(!!legacyToken);
+        }
+      }
     } catch (err) {
-      console.error('Error checking Google:', err);
+      console.error('Error checking Google connection:', err);
+      setIsGoogleConnected(false);
     } finally {
       setIsLoadingGoogle(false);
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
-  };
-
   useEffect(() => {
-    checkGoogleConnection();
+    if (user) {
+      checkGoogleConnection();
+    }
     
     // Check for connection callback
     const params = new URLSearchParams(window.location.search);
@@ -100,109 +115,41 @@ const Settings = () => {
         description: "Your Google account has been successfully connected!",
       });
       window.history.replaceState({}, '', '/settings');
-      // Force recheck after OAuth callback
       setTimeout(() => checkGoogleConnection(), 500);
     }
-  }, []);
+  }, [user]);
 
   // Recheck when page becomes visible
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
+      if (!document.hidden && user) {
         checkGoogleConnection();
       }
     };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [user]);
 
-  const checkGoogleConnection = async () => {
-    if (!phoneNumber) {
-      setIsLoadingGoogle(false);
-      return;
-    }
-    
-    try {
-      // Check if this specific phone number has Google connected
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id, email, name, city, briefing_time, gmail_tab_preference, briefing_sections')
-        .eq('phone', phoneNumber)
-        .maybeSingle();
-      
-      if (!userData) {
-        setIsGoogleConnected(false);
-        setIsLoadingGoogle(false);
-        return;
-      }
-
-      if (userData.email) {
-        setUserEmail(userData.email);
-      }
-      if (userData.name) {
-        setUserName(userData.name);
-      }
-      if (userData.city) {
-        setCity(userData.city);
-      }
-      if (userData.briefing_time) {
-        setBriefingTime(userData.briefing_time);
-      }
-      if (userData.gmail_tab_preference) {
-        setGmailTabPreference(userData.gmail_tab_preference);
-      }
-      if (userData.briefing_sections) {
-        setBriefingSections(userData.briefing_sections as any);
-      }
-
-      const { data: tokenData } = await supabase
-        .from('oauth_tokens')
-        .select('id')
-        .eq('user_id', userData.id)
-        .eq('provider', 'google')
-        .maybeSingle();
-      
-      setIsGoogleConnected(!!tokenData);
-      console.log('Google connection status for', phoneNumber, ':', !!tokenData);
-    } catch (err) {
-      console.error('Error checking Google connection:', err);
-      setIsGoogleConnected(false);
-    } finally {
-      setIsLoadingGoogle(false);
-    }
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
   };
 
   const handleConnectGoogle = async () => {
-    if (!phoneNumber) {
+    if (!user) {
       toast({
-        title: "Phone number required",
-        description: "Please enter your WhatsApp phone number",
+        title: "Not authenticated",
+        description: "Please sign in first",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      // Upsert user by phone number
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .upsert(
-          { phone: phoneNumber, updated_at: new Date().toISOString() },
-          { onConflict: 'phone' }
-        )
-        .select()
-        .single();
-
-      if (userError || !userData) {
-        throw new Error('Failed to create/find user');
-      }
-
-      console.log('Using user ID:', userData.id, 'for phone:', phoneNumber);
-
       const redirectUrl = window.location.href.split('?')[0];
       const { data, error } = await supabase.functions.invoke('auth-google', {
-        body: { userId: userData.id, redirectUrl }
+        body: { userId: user.id, redirectUrl }
       });
 
       if (error) throw error;
@@ -225,40 +172,30 @@ const Settings = () => {
   };
 
   const handleDisconnectGoogle = async () => {
-    if (!phoneNumber) return;
+    if (!user) return;
 
-    // Confirm disconnection
     if (!window.confirm('Are you sure you want to disconnect Google Workspace? You will need to reconnect to use Calendar, Gmail, Tasks, and Drive features.')) {
       return;
     }
 
     try {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('phone', phoneNumber)
-        .maybeSingle();
-      
-      if (!userData) {
-        throw new Error('User not found');
-      }
-
-      // Delete OAuth tokens
+      // Delete OAuth tokens for this user
       const { error: deleteError } = await supabase
         .from('oauth_tokens')
         .delete()
-        .eq('user_id', userData.id)
+        .eq('user_id', user.id)
         .eq('provider', 'google');
 
-      if (deleteError) {
-        throw deleteError;
-      }
+      if (deleteError) throw deleteError;
 
-      // Clear email from user record
-      await supabase
-        .from('users')
-        .update({ email: null })
-        .eq('id', userData.id);
+      // Also try to delete via legacy user id if exists
+      if (legacyUserId) {
+        await supabase
+          .from('oauth_tokens')
+          .delete()
+          .eq('user_id', legacyUserId)
+          .eq('provider', 'google');
+      }
 
       setIsGoogleConnected(false);
       setUserEmail("");
@@ -277,34 +214,35 @@ const Settings = () => {
     }
   };
 
+  const handleSaveProfile = async (updates: Record<string, unknown>) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+
+      if (error) throw error;
+      await refreshProfile();
+      return true;
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      throw error;
+    }
+  };
+
   const handleSaveCity = async () => {
-    if (!phoneNumber || !city) return;
+    if (!user || !city) return;
 
     setIsSavingCity(true);
     try {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('phone', phoneNumber)
-        .maybeSingle();
-      
-      if (!userData) {
-        throw new Error('User not found. Please enter your WhatsApp number.');
-      }
-
-      const { error } = await supabase
-        .from('users')
-        .update({ city: city })
-        .eq('id', userData.id);
-
-      if (error) throw error;
-
+      await handleSaveProfile({ city });
       toast({
         title: "City Updated",
         description: `Your city has been set to ${city} for weather forecasts`,
       });
     } catch (error) {
-      console.error('Error saving city:', error);
       toast({
         title: "Failed to save city",
         description: error instanceof Error ? error.message : "Please try again",
@@ -316,33 +254,16 @@ const Settings = () => {
   };
 
   const handleSaveName = async () => {
-    if (!phoneNumber || !userName) return;
+    if (!user || !userName) return;
 
     setIsSavingName(true);
     try {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('phone', phoneNumber)
-        .maybeSingle();
-      
-      if (!userData) {
-        throw new Error('User not found. Please enter your WhatsApp phone number.');
-      }
-
-      const { error } = await supabase
-        .from('users')
-        .update({ name: userName })
-        .eq('id', userData.id);
-
-      if (error) throw error;
-
+      await handleSaveProfile({ name: userName });
       toast({
         title: "Name Updated",
-        description: `Your name has been set to ${userName} for email signatures`,
+        description: `Your name has been set to ${userName}`,
       });
     } catch (error) {
-      console.error('Error saving name:', error);
       toast({
         title: "Failed to save name",
         description: error instanceof Error ? error.message : "Please try again",
@@ -354,37 +275,20 @@ const Settings = () => {
   };
 
   const handleSaveBriefingSettings = async () => {
-    if (!phoneNumber) return;
+    if (!user) return;
 
     setIsSavingBriefing(true);
     try {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('phone', phoneNumber)
-        .maybeSingle();
-      
-      if (!userData) {
-        throw new Error('User not found. Please enter your WhatsApp phone number.');
-      }
-
-      const { error } = await supabase
-        .from('users')
-        .update({ 
-          briefing_time: briefingTime,
-          gmail_tab_preference: gmailTabPreference,
-          briefing_sections: briefingSections
-        })
-        .eq('id', userData.id);
-
-      if (error) throw error;
-
+      await handleSaveProfile({
+        briefing_time: briefingTime,
+        gmail_tab_preference: gmailTabPreference,
+        briefing_sections: briefingSections
+      });
       toast({
         title: "Briefing Settings Updated",
         description: `Your daily briefing will arrive at ${briefingTime} IST`,
       });
     } catch (error) {
-      console.error('Error saving briefing settings:', error);
       toast({
         title: "Failed to save settings",
         description: error instanceof Error ? error.message : "Please try again",
@@ -399,20 +303,41 @@ const Settings = () => {
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20">
       <div className="container max-w-4xl mx-auto px-4 py-12">
         {/* Header */}
-        <div className="mb-8">
-          <Button
-            variant="ghost"
-            className="mb-4"
-            onClick={() => navigate('/dashboard')}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Dashboard
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <Button
+              variant="ghost"
+              className="mb-4"
+              onClick={() => navigate('/dashboard')}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Dashboard
+            </Button>
+            <h1 className="text-4xl font-bold text-foreground mb-2">Settings</h1>
+            <p className="text-muted-foreground text-lg">
+              Manage your connections and preferences for Man Friday.
+            </p>
+          </div>
+          <Button variant="outline" onClick={handleSignOut}>
+            <LogOut className="w-4 h-4 mr-2" />
+            Sign Out
           </Button>
-          <h1 className="text-4xl font-bold text-foreground mb-2">Settings</h1>
-          <p className="text-muted-foreground text-lg">
-            Manage your connections and preferences for Man Friday.
-          </p>
         </div>
+
+        {/* Account Info */}
+        <Card className="p-6 mb-6">
+          <h2 className="text-2xl font-semibold mb-4">Account</h2>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Signed in as: <span className="font-medium text-foreground">{user?.email}</span>
+            </p>
+            {phoneNumber && (
+              <p className="text-sm text-muted-foreground">
+                WhatsApp: <span className="font-medium text-foreground">{phoneNumber}</span>
+              </p>
+            )}
+          </div>
+        </Card>
 
         {/* Connection Status */}
         <Card className="p-6 mb-6">
@@ -420,80 +345,72 @@ const Settings = () => {
           
           <div className="space-y-4">
             {/* WhatsApp Status */}
-            <div className="flex items-center justify-between p-4 border border-success/20 bg-success/5 rounded-lg">
+            <div className={`flex items-center justify-between p-4 border rounded-lg ${
+              phoneNumber ? 'border-success/20 bg-success/5' : 'border-border'
+            }`}>
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-success/10 rounded-lg">
-                  <CheckCircle2 className="w-5 h-5 text-success" />
+                <div className={`p-2 rounded-lg ${phoneNumber ? 'bg-success/10' : 'bg-warning/10'}`}>
+                  {phoneNumber ? (
+                    <CheckCircle2 className="w-5 h-5 text-success" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-warning" />
+                  )}
                 </div>
                 <div>
-                  <h3 className="font-semibold">WhatsApp (Twilio)</h3>
+                  <h3 className="font-semibold">WhatsApp</h3>
                   <p className="text-sm text-muted-foreground">
-                    Connected - Webhook configured
+                    {phoneNumber ? `Connected - ${phoneNumber}` : 'Not configured - Complete onboarding'}
                   </p>
                 </div>
               </div>
-              <span className="px-3 py-1 bg-success/10 text-success text-sm font-medium rounded-full">
-                Active
-              </span>
+              {phoneNumber ? (
+                <span className="px-3 py-1 bg-success/10 text-success text-sm font-medium rounded-full">
+                  Active
+                </span>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => navigate('/onboarding')}>
+                  Setup
+                </Button>
+              )}
             </div>
 
             {/* Google Workspace Status */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="text-sm font-medium">
-                  Your WhatsApp Phone Number
-                </Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  placeholder="+919821230311"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  onBlur={checkGoogleConnection}
-                  className="max-w-xs"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Enter your WhatsApp number to link with Google account
-                </p>
-              </div>
-
-              <div className={`flex items-center justify-between p-4 border rounded-lg ${
-                isGoogleConnected ? 'border-success/20 bg-success/5' : 'border-border'
-              }`}>
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${
-                    isGoogleConnected ? 'bg-success/10' : 'bg-warning/10'
-                  }`}>
-                    {isGoogleConnected ? (
-                      <CheckCircle2 className="w-5 h-5 text-success" />
-                    ) : (
-                      <XCircle className="w-5 h-5 text-warning" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">Google Workspace</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {isGoogleConnected 
-                        ? `Connected${userEmail ? ` - ${userEmail}` : ''} - Gmail, Calendar, Tasks enabled`
-                        : 'Not connected - Click to authorize'
-                      }
-                    </p>
-                  </div>
+            <div className={`flex items-center justify-between p-4 border rounded-lg ${
+              isGoogleConnected ? 'border-success/20 bg-success/5' : 'border-border'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${
+                  isGoogleConnected ? 'bg-success/10' : 'bg-warning/10'
+                }`}>
+                  {isGoogleConnected ? (
+                    <CheckCircle2 className="w-5 h-5 text-success" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-warning" />
+                  )}
                 </div>
-                {isGoogleConnected ? (
-                  <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={handleDisconnectGoogle}
-                  >
-                    Disconnect
-                  </Button>
-                ) : (
-                  <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle || !phoneNumber}>
-                    {isLoadingGoogle ? 'Checking...' : 'Connect Google'}
-                  </Button>
-                )}
+                <div>
+                  <h3 className="font-semibold">Google Workspace</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {isGoogleConnected 
+                      ? `Connected${userEmail ? ` - ${userEmail}` : ''} - Gmail, Calendar, Tasks enabled`
+                      : 'Not connected - Click to authorize'
+                    }
+                  </p>
+                </div>
               </div>
+              {isGoogleConnected ? (
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={handleDisconnectGoogle}
+                >
+                  Disconnect
+                </Button>
+              ) : (
+                <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle}>
+                  {isLoadingGoogle ? 'Checking...' : 'Connect Google'}
+                </Button>
+              )}
             </div>
 
             {/* Lovable AI Status */}
@@ -528,7 +445,7 @@ const Settings = () => {
                   Daily Morning Briefing
                 </Label>
                 <p className="text-sm text-muted-foreground">
-                  Receive a summary of your day at 8:00 AM IST
+                  Receive a summary of your day at your configured time
                 </p>
               </div>
               <Switch
@@ -577,7 +494,7 @@ const Settings = () => {
                   />
                   <Button 
                     onClick={handleSaveName} 
-                    disabled={isSavingName || !phoneNumber || !userName}
+                    disabled={isSavingName || !userName}
                     size="default"
                   >
                     {isSavingName ? 'Saving...' : 'Save Name'}
@@ -608,7 +525,7 @@ const Settings = () => {
                   />
                   <Button 
                     onClick={handleSaveCity} 
-                    disabled={isSavingCity || !phoneNumber}
+                    disabled={isSavingCity}
                     size="default"
                   >
                     {isSavingCity ? 'Saving...' : 'Save City'}
@@ -623,7 +540,7 @@ const Settings = () => {
                 Timezone
               </Label>
               <p className="text-sm text-muted-foreground mb-2">
-                Your current timezone: <span className="font-medium text-foreground">Asia/Kolkata (IST)</span>
+                Your current timezone: <span className="font-medium text-foreground">{profile?.tz || 'Asia/Kolkata'} (IST)</span>
               </p>
               <p className="text-xs text-muted-foreground">
                 Timezone is auto-detected. Contact support to change.
@@ -745,7 +662,7 @@ const Settings = () => {
             <div className="pt-4 border-t">
               <Button 
                 onClick={handleSaveBriefingSettings} 
-                disabled={isSavingBriefing || !phoneNumber}
+                disabled={isSavingBriefing}
                 size="default"
               >
                 {isSavingBriefing ? 'Saving...' : 'Save Briefing Settings'}
@@ -753,7 +670,6 @@ const Settings = () => {
             </div>
           </div>
         </Card>
-
       </div>
     </div>
   );
