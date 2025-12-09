@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, MessageSquare, Settings, Smartphone, ArrowRight, ArrowLeft, Loader2, ExternalLink } from "lucide-react";
+import { CheckCircle2, MessageSquare, Settings, Smartphone, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 type OnboardingStep = 'phone' | 'google' | 'whatsapp' | 'complete';
 
@@ -15,27 +16,29 @@ const Onboarding = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const { user, profile, refreshProfile } = useAuth();
   
   // Check if returning from Google OAuth
   const isGoogleConnected = searchParams.get('connected') === 'google';
   
   const [currentStep, setCurrentStep] = useState<OnboardingStep>(isGoogleConnected ? 'whatsapp' : 'phone');
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [userName, setUserName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+
+  // Initialize from profile if available
+  useEffect(() => {
+    if (profile?.phone) {
+      setPhoneNumber(profile.phone);
+    }
+  }, [profile]);
 
   // Format phone number as user types
   const formatPhoneNumber = (value: string) => {
-    // Remove all non-digit characters except +
     let cleaned = value.replace(/[^\d+]/g, '');
-    
-    // Ensure it starts with +
     if (cleaned && !cleaned.startsWith('+')) {
       cleaned = '+' + cleaned;
     }
-    
     return cleaned;
   };
 
@@ -49,39 +52,54 @@ const Onboarding = () => {
       return;
     }
 
+    if (!user) {
+      toast({
+        title: "Not authenticated",
+        description: "Please sign in first",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      // Create or update user
-      const { data: userData, error: userError } = await supabase
+      // Update the profile with phone number
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          phone: phoneNumber,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Also update the legacy users table for backward compatibility with WhatsApp webhook
+      await supabase
         .from('users')
         .upsert(
           { 
             phone: phoneNumber, 
-            name: userName || null,
+            name: profile?.name || null,
+            auth_user_id: user.id,
             updated_at: new Date().toISOString() 
           },
           { onConflict: 'phone' }
-        )
-        .select()
-        .single();
+        );
 
-      if (userError || !userData) {
-        throw new Error('Failed to create user profile');
-      }
-
-      setUserId(userData.id);
+      await refreshProfile();
       
       toast({
-        title: "Profile Created",
-        description: "Your account has been set up successfully!",
+        title: "Phone Number Saved",
+        description: "Your WhatsApp number has been linked!",
       });
       
       setCurrentStep('google');
     } catch (error) {
-      console.error('Error creating profile:', error);
+      console.error('Error saving phone:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create profile",
+        description: error instanceof Error ? error.message : "Failed to save phone number",
         variant: "destructive",
       });
     } finally {
@@ -90,10 +108,10 @@ const Onboarding = () => {
   };
 
   const handleConnectGoogle = async () => {
-    if (!phoneNumber) {
+    if (!user) {
       toast({
-        title: "Phone number required",
-        description: "Please complete the previous step first",
+        title: "Not authenticated",
+        description: "Please sign in first",
         variant: "destructive",
       });
       return;
@@ -101,28 +119,23 @@ const Onboarding = () => {
 
     setIsGoogleLoading(true);
     try {
-      // Get or create user ID
+      // Get the legacy user ID for Google OAuth (which uses the users table)
       const { data: userData } = await supabase
         .from('users')
         .select('id')
         .eq('phone', phoneNumber)
         .maybeSingle();
 
-      if (!userData) {
-        throw new Error('User not found. Please enter your phone number first.');
-      }
+      const userIdForOAuth = userData?.id || user.id;
 
       const redirectUrl = `${window.location.origin}/onboarding`;
       const { data, error } = await supabase.functions.invoke('auth-google', {
-        body: { userId: userData.id, redirectUrl }
+        body: { userId: userIdForOAuth, redirectUrl }
       });
 
       if (error) throw error;
       
       if (data?.authUrl) {
-        // Store phone in localStorage for when they return
-        localStorage.setItem('onboarding_phone', phoneNumber);
-        localStorage.setItem('onboarding_name', userName);
         window.location.href = data.authUrl;
       }
     } catch (error) {
@@ -144,23 +157,26 @@ const Onboarding = () => {
     setCurrentStep('complete');
   };
 
-  const handleFinish = () => {
-    // Clear onboarding data
-    localStorage.removeItem('onboarding_phone');
-    localStorage.removeItem('onboarding_name');
-    navigate('/dashboard');
+  const handleFinish = async () => {
+    if (!user) return;
+
+    try {
+      // Mark onboarding as complete
+      await supabase
+        .from('profiles')
+        .update({ onboarding_completed: true })
+        .eq('id', user.id);
+
+      await refreshProfile();
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error completing onboarding:', error);
+      navigate('/dashboard');
+    }
   };
 
-  // Restore phone from localStorage if returning from OAuth
-  useState(() => {
-    const savedPhone = localStorage.getItem('onboarding_phone');
-    const savedName = localStorage.getItem('onboarding_name');
-    if (savedPhone) setPhoneNumber(savedPhone);
-    if (savedName) setUserName(savedName);
-  });
-
   const steps = [
-    { key: 'phone', label: 'Profile', icon: Smartphone },
+    { key: 'phone', label: 'Phone', icon: Smartphone },
     { key: 'google', label: 'Google', icon: Settings },
     { key: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
     { key: 'complete', label: 'Done', icon: CheckCircle2 },
@@ -187,7 +203,7 @@ const Onboarding = () => {
                       scale: isActive ? 1.1 : 1,
                       backgroundColor: isCompleted ? 'hsl(var(--success))' : isActive ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
                     }}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors`}
+                    className="w-10 h-10 rounded-full flex items-center justify-center transition-colors"
                   >
                     <Icon className={`w-5 h-5 ${isCompleted || isActive ? 'text-white' : 'text-muted-foreground'}`} />
                   </motion.div>
@@ -215,24 +231,18 @@ const Onboarding = () => {
                   <div className="inline-flex p-4 bg-primary/10 rounded-full mb-4">
                     <Smartphone className="w-8 h-8 text-primary" />
                   </div>
-                  <h1 className="text-3xl font-bold mb-2">Welcome to Man Friday</h1>
+                  <h1 className="text-3xl font-bold mb-2">Link Your WhatsApp</h1>
                   <p className="text-muted-foreground">
-                    Let's set up your AI executive assistant. First, enter your WhatsApp phone number.
+                    Enter your WhatsApp phone number to start using Man Friday.
                   </p>
+                  {profile?.name && (
+                    <p className="text-sm text-primary mt-2">
+                      Welcome, {profile.name}!
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Your Name (optional)</Label>
-                    <Input
-                      id="name"
-                      type="text"
-                      placeholder="John Doe"
-                      value={userName}
-                      onChange={(e) => setUserName(e.target.value)}
-                    />
-                  </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="phone">WhatsApp Phone Number</Label>
                     <Input
@@ -256,7 +266,7 @@ const Onboarding = () => {
                     {isLoading ? (
                       <>
                         <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Creating Profile...
+                        Saving...
                       </>
                     ) : (
                       <>
@@ -446,31 +456,12 @@ const Onboarding = () => {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                    <p className="font-medium">Quick Tips:</p>
-                    <ul className="text-sm text-muted-foreground space-y-2">
-                      <li>• Send voice notes for hands-free assistance</li>
-                      <li>• Upload documents for instant summaries</li>
-                      <li>• Your daily briefing arrives at 8:00 AM IST</li>
-                      <li>• Customize settings in the Settings page</li>
-                    </ul>
-                  </div>
-
                   <Button 
                     onClick={handleFinish}
                     className="w-full py-6 text-lg"
                   >
                     Go to Dashboard
                     <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button>
-
-                  <Button 
-                    variant="outline"
-                    onClick={() => navigate('/settings')}
-                    className="w-full"
-                  >
-                    <Settings className="w-4 h-4 mr-2" />
-                    Customize Settings
                   </Button>
                 </div>
               </Card>

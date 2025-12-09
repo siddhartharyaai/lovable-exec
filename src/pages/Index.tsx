@@ -4,9 +4,11 @@ import { Bot, Calendar, Mail, CheckSquare, MessageSquare, Zap, Shield, Clock, Fi
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { FadeInView } from "@/components/animations/FadeInView";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
 
   const features = [
     {
@@ -50,23 +52,35 @@ const Index = () => {
   const howItWorksSteps = [
     {
       number: "1",
-      title: "Connect Accounts",
-      description: "Link your Google Workspace and WhatsApp in minutes.",
+      title: "Create Account",
+      description: "Sign up with your email and set up your profile in minutes.",
       icon: Users,
     },
     {
       number: "2",
+      title: "Connect & Configure",
+      description: "Link your Google Workspace and WhatsApp number.",
+      icon: Sparkles,
+    },
+    {
+      number: "3",
       title: "Chat Naturally",
       description: "Ask Man Friday anything via text or voice on WhatsApp.",
       icon: MessageSquare,
     },
-    {
-      number: "3",
-      title: "Get Things Done",
-      description: "Man Friday handles the rest—scheduling, emails, reminders, and more.",
-      icon: Sparkles,
-    },
   ];
+
+  const handleGetStarted = () => {
+    if (user) {
+      if (profile?.onboarding_completed) {
+        navigate('/dashboard');
+      } else {
+        navigate('/onboarding');
+      }
+    } else {
+      navigate('/auth');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-accent/10">
@@ -115,21 +129,22 @@ const Index = () => {
             <Button 
               size="lg" 
               className="text-lg px-10 py-7 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
-              onClick={() => navigate('/onboarding')}
+              onClick={handleGetStarted}
             >
               <MessageSquare className="w-5 h-5 mr-2" />
-              Get Started Free
+              {user ? (profile?.onboarding_completed ? 'Go to Dashboard' : 'Continue Setup') : 'Get Started Free'}
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
-              className="text-lg px-10 py-7 backdrop-blur-sm hover:bg-background/50 hover:scale-105 transition-all duration-300"
-              onClick={() => navigate('/settings')}
-            >
-              <Shield className="w-5 h-5 mr-2" />
-              View Setup Guide
-            </Button>
+            {!user && (
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="text-lg px-10 py-7 backdrop-blur-sm hover:bg-background/50 hover:scale-105 transition-all duration-300"
+                onClick={() => navigate('/auth')}
+              >
+                Sign In
+              </Button>
+            )}
           </motion.div>
 
           <motion.div
@@ -260,10 +275,10 @@ const Index = () => {
             <Button 
               size="lg" 
               className="text-xl px-12 py-8 shadow-2xl hover:scale-105 transition-all duration-300"
-              onClick={() => navigate('/dashboard')}
+              onClick={handleGetStarted}
             >
               <MessageSquare className="w-6 h-6 mr-2" />
-              Start Free Setup
+              {user ? 'Go to Dashboard' : 'Start Free Setup'}
               <ArrowRight className="w-6 h-6 ml-2" />
             </Button>
           </Card>

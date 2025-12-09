@@ -1,0 +1,269 @@
+import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { Bot, Loader2, Mail, Lock, User, ArrowLeft } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { z } from 'zod';
+
+const emailSchema = z.string().email('Please enter a valid email address');
+const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
+const nameSchema = z.string().min(1, 'Name is required').max(100, 'Name is too long');
+
+type AuthMode = 'signin' | 'signup';
+
+const Auth = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { toast } = useToast();
+  const { signIn, signUp, user, profile, isLoading: authLoading } = useAuth();
+
+  const [mode, setMode] = useState<AuthMode>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string }>({});
+
+  // Redirect if already authenticated
+  if (!authLoading && user) {
+    const from = (location.state as any)?.from?.pathname || '/dashboard';
+    if (profile?.onboarding_completed) {
+      navigate(from, { replace: true });
+    } else {
+      navigate('/onboarding', { replace: true });
+    }
+    return null;
+  }
+
+  const validateForm = (): boolean => {
+    const newErrors: { email?: string; password?: string; name?: string } = {};
+
+    const emailResult = emailSchema.safeParse(email);
+    if (!emailResult.success) {
+      newErrors.email = emailResult.error.errors[0].message;
+    }
+
+    const passwordResult = passwordSchema.safeParse(password);
+    if (!passwordResult.success) {
+      newErrors.password = passwordResult.error.errors[0].message;
+    }
+
+    if (mode === 'signup') {
+      const nameResult = nameSchema.safeParse(fullName);
+      if (!nameResult.success) {
+        newErrors.name = nameResult.error.errors[0].message;
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validateForm()) return;
+
+    setIsLoading(true);
+
+    try {
+      if (mode === 'signup') {
+        const { error } = await signUp(email, password, fullName);
+        
+        if (error) {
+          if (error.message.includes('already registered')) {
+            toast({
+              title: 'Account exists',
+              description: 'An account with this email already exists. Try signing in instead.',
+              variant: 'destructive',
+            });
+          } else {
+            toast({
+              title: 'Sign up failed',
+              description: error.message,
+              variant: 'destructive',
+            });
+          }
+          return;
+        }
+
+        toast({
+          title: 'Account created!',
+          description: 'Welcome to Man Friday. Let\'s set up your assistant.',
+        });
+        
+        // Navigate to onboarding after successful signup
+        navigate('/onboarding');
+      } else {
+        const { error } = await signIn(email, password);
+
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            toast({
+              title: 'Invalid credentials',
+              description: 'The email or password you entered is incorrect.',
+              variant: 'destructive',
+            });
+          } else {
+            toast({
+              title: 'Sign in failed',
+              description: error.message,
+              variant: 'destructive',
+            });
+          }
+          return;
+        }
+
+        toast({
+          title: 'Welcome back!',
+          description: 'Successfully signed in.',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: 'An unexpected error occurred. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setMode(mode === 'signin' ? 'signup' : 'signin');
+    setErrors({});
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-accent/10 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <Button
+          variant="ghost"
+          className="mb-6"
+          onClick={() => navigate('/')}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Home
+        </Button>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <Card className="p-8 border-border/50 bg-card/80 backdrop-blur-sm">
+            <div className="text-center mb-8">
+              <div className="inline-flex p-4 bg-primary/10 rounded-full mb-4">
+                <Bot className="w-8 h-8 text-primary" />
+              </div>
+              <h1 className="text-3xl font-bold mb-2">
+                {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
+              </h1>
+              <p className="text-muted-foreground">
+                {mode === 'signin'
+                  ? 'Sign in to your Man Friday account'
+                  : 'Get started with your AI executive assistant'}
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {mode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    Full Name
+                  </Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="John Doe"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className={errors.name ? 'border-destructive' : ''}
+                  />
+                  {errors.name && (
+                    <p className="text-sm text-destructive">{errors.name}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="flex items-center gap-2">
+                  <Mail className="w-4 h-4" />
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={errors.email ? 'border-destructive' : ''}
+                />
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password" className="flex items-center gap-2">
+                  <Lock className="w-4 h-4" />
+                  Password
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={errors.password ? 'border-destructive' : ''}
+                />
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password}</p>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-6 text-lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
+                  </>
+                ) : mode === 'signin' ? (
+                  'Sign In'
+                ) : (
+                  'Create Account'
+                )}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-muted-foreground">
+                {mode === 'signin' ? "Don't have an account?" : 'Already have an account?'}
+                <Button
+                  variant="link"
+                  className="px-2"
+                  onClick={toggleMode}
+                >
+                  {mode === 'signin' ? 'Sign up' : 'Sign in'}
+                </Button>
+              </p>
+            </div>
+          </Card>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+export default Auth;
