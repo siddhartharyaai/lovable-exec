@@ -3,20 +3,22 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, profile, signOut, refreshProfile } = useAuth();
   const [dailyBriefing, setDailyBriefing] = useState(true);
   const [birthdayReminders, setBirthdayReminders] = useState(true);
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(true);
-  const [phoneNumber, setPhoneNumber] = useState("+919821230311");
+  const [legacyUserId, setLegacyUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [city, setCity] = useState("Mumbai");
@@ -33,6 +35,59 @@ const Settings = () => {
     reminders: true
   });
   const [isSavingBriefing, setIsSavingBriefing] = useState(false);
+
+  // Initialize from profile
+  useEffect(() => {
+    if (profile) {
+      setUserName(profile.name || "");
+      setCity(profile.city || "Mumbai");
+      setUserEmail(profile.email || "");
+      if (profile.briefing_time) setBriefingTime(profile.briefing_time);
+      if (profile.gmail_tab_preference) setGmailTabPreference(profile.gmail_tab_preference);
+      if (profile.briefing_sections) setBriefingSections(profile.briefing_sections as any);
+      setDailyBriefing(profile.daily_briefing_enabled);
+      setBirthdayReminders(profile.birthday_reminders_enabled);
+      
+      if (profile.phone) {
+        fetchLegacyUserId(profile.phone);
+      }
+    }
+  }, [profile]);
+
+  const fetchLegacyUserId = async (phone: string) => {
+    const { data } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone', phone)
+      .maybeSingle();
+    if (data) {
+      setLegacyUserId(data.id);
+      checkGoogleConnection(data.id);
+    } else {
+      setIsLoadingGoogle(false);
+    }
+  };
+
+  const checkGoogleConnection = async (userId: string) => {
+    try {
+      const { data } = await supabase
+        .from('oauth_tokens')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('provider', 'google')
+        .maybeSingle();
+      setIsGoogleConnected(!!data);
+    } catch (err) {
+      console.error('Error checking Google:', err);
+    } finally {
+      setIsLoadingGoogle(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
 
   useEffect(() => {
     checkGoogleConnection();

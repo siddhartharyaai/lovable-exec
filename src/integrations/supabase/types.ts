@@ -415,6 +415,60 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          birthday_reminders_enabled: boolean | null
+          briefing_sections: Json | null
+          briefing_time: string | null
+          city: string | null
+          created_at: string | null
+          daily_briefing_enabled: boolean | null
+          email: string | null
+          gmail_tab_preference: string | null
+          id: string
+          name: string | null
+          onboarding_completed: boolean | null
+          phone: string | null
+          tz: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          birthday_reminders_enabled?: boolean | null
+          briefing_sections?: Json | null
+          briefing_time?: string | null
+          city?: string | null
+          created_at?: string | null
+          daily_briefing_enabled?: boolean | null
+          email?: string | null
+          gmail_tab_preference?: string | null
+          id: string
+          name?: string | null
+          onboarding_completed?: boolean | null
+          phone?: string | null
+          tz?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          birthday_reminders_enabled?: boolean | null
+          briefing_sections?: Json | null
+          briefing_time?: string | null
+          city?: string | null
+          created_at?: string | null
+          daily_briefing_enabled?: boolean | null
+          email?: string | null
+          gmail_tab_preference?: string | null
+          id?: string
+          name?: string | null
+          onboarding_completed?: boolean | null
+          phone?: string | null
+          tz?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       reminders: {
         Row: {
           created_at: string
@@ -661,8 +715,30 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       users: {
         Row: {
+          auth_user_id: string | null
           birthday_reminders_enabled: boolean
           briefing_sections: Json | null
           briefing_time: string | null
@@ -679,6 +755,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auth_user_id?: string | null
           birthday_reminders_enabled?: boolean
           briefing_sections?: Json | null
           briefing_time?: string | null
@@ -695,6 +772,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auth_user_id?: string | null
           birthday_reminders_enabled?: boolean
           briefing_sections?: Json | null
           briefing_time?: string | null
@@ -717,9 +795,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
+      app_role: "admin" | "user"
       message_direction: "in" | "out"
       reminder_status: "pending" | "sent" | "failed"
     }
@@ -849,6 +934,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["admin", "user"],
       message_direction: ["in", "out"],
       reminder_status: ["pending", "sent", "failed"],
     },

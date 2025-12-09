@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Settings, Shield, MessageSquare, TrendingUp, Clock, CheckCircle, Lightbulb, BarChart3 } from "lucide-react";
+import { Settings, Shield, MessageSquare, TrendingUp, Clock, CheckCircle, Lightbulb, BarChart3, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +13,7 @@ import { EnhancedMessagesCard } from "@/components/dashboard/EnhancedMessagesCar
 import { EnhancedRemindersCard } from "@/components/dashboard/EnhancedRemindersCard";
 import { ActivityTimeline } from "@/components/dashboard/ActivityTimeline";
 import { QuickActions } from "@/components/dashboard/QuickActions";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Message {
   id: string;
@@ -40,12 +41,14 @@ interface ActivityLog {
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user, profile, signOut } = useAuth();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
   const [recentMessages, setRecentMessages] = useState<Message[]>([]);
   const [upcomingReminders, setUpcomingReminders] = useState<Reminder[]>([]);
   const [recentActivities, setRecentActivities] = useState<ActivityLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [legacyUserId, setLegacyUserId] = useState<string | null>(null);
   
   // Usage insights state
   const [weeklyStats, setWeeklyStats] = useState({
@@ -55,18 +58,51 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    checkConnections();
-    fetchDashboardData();
-    fetchWeeklyStats();
-  }, []);
+    if (profile?.phone) {
+      fetchLegacyUserId();
+    }
+  }, [profile?.phone]);
+
+  useEffect(() => {
+    if (legacyUserId) {
+      checkConnections();
+      fetchDashboardData();
+      fetchWeeklyStats();
+    }
+  }, [legacyUserId]);
+
+  const fetchLegacyUserId = async () => {
+    if (!profile?.phone) return;
+    
+    try {
+      const { data } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone', profile.phone)
+        .maybeSingle();
+      
+      if (data) {
+        setLegacyUserId(data.id);
+      } else {
+        setIsLoadingConnections(false);
+        setIsLoadingData(false);
+      }
+    } catch (err) {
+      console.error('Error fetching legacy user:', err);
+      setIsLoadingConnections(false);
+      setIsLoadingData(false);
+    }
+  };
 
   const checkConnections = async () => {
+    if (!legacyUserId) return;
+    
     try {
       const { data, error } = await supabase
         .from('oauth_tokens')
         .select('id')
+        .eq('user_id', legacyUserId)
         .eq('provider', 'google')
-        .limit(1)
         .maybeSingle();
       
       setIsGoogleConnected(!!data && !error);
@@ -79,12 +115,15 @@ const Dashboard = () => {
   };
 
   const fetchDashboardData = async () => {
+    if (!legacyUserId) return;
+    
     try {
       setIsLoadingData(true);
 
       const { data: messages, error: msgError } = await supabase
         .from('messages')
         .select('*')
+        .eq('user_id', legacyUserId)
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -95,6 +134,7 @@ const Dashboard = () => {
       const { data: reminders, error: remError } = await supabase
         .from('reminders')
         .select('*')
+        .eq('user_id', legacyUserId)
         .eq('status', 'pending')
         .gte('due_ts', new Date().toISOString())
         .order('due_ts', { ascending: true })
@@ -107,6 +147,7 @@ const Dashboard = () => {
       const { data: logs, error: logsError } = await supabase
         .from('logs')
         .select('*')
+        .eq('user_id', legacyUserId)
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -123,27 +164,29 @@ const Dashboard = () => {
   };
 
   const fetchWeeklyStats = async () => {
+    if (!legacyUserId) return;
+    
     try {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const isoDate = sevenDaysAgo.toISOString();
 
-      // Count messages from last 7 days
       const { count: messagesCount } = await supabase
         .from('messages')
         .select('*', { count: 'exact', head: true })
+        .eq('user_id', legacyUserId)
         .gte('created_at', isoDate);
 
-      // Count reminders from last 7 days
       const { count: remindersCount } = await supabase
         .from('reminders')
         .select('*', { count: 'exact', head: true })
+        .eq('user_id', legacyUserId)
         .gte('created_at', isoDate);
 
-      // Count email drafts from last 7 days
       const { count: emailDraftsCount } = await supabase
         .from('email_drafts')
         .select('*', { count: 'exact', head: true })
+        .eq('user_id', legacyUserId)
         .gte('created_at', isoDate);
 
       setWeeklyStats({
@@ -154,6 +197,11 @@ const Dashboard = () => {
     } catch (err) {
       console.error('Error fetching weekly stats:', err);
     }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
   };
 
   const totalInteractions = recentMessages.length;
@@ -176,7 +224,7 @@ const Dashboard = () => {
                 Man Friday
               </h1>
               <p className="text-muted-foreground text-lg">
-                Your WhatsApp-powered AI executive assistant.
+                {profile?.name ? `Welcome back, ${profile.name}!` : 'Your WhatsApp-powered AI executive assistant.'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -195,6 +243,14 @@ const Dashboard = () => {
                 className="hover:scale-105 transition-transform"
               >
                 <Shield className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleSignOut}
+                className="hover:scale-105 transition-transform text-destructive hover:text-destructive"
+              >
+                <LogOut className="w-5 h-5" />
               </Button>
             </div>
           </div>
@@ -232,7 +288,6 @@ const Dashboard = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-2 space-y-6">
-            {/* Getting Started Panel */}
             <FadeInView delay={0.2}>
               <Card className="p-6 border-primary/20 bg-gradient-to-br from-primary/5 to-accent/5">
                 <div className="flex items-start gap-3 mb-4">
@@ -263,7 +318,6 @@ const Dashboard = () => {
               </Card>
             </FadeInView>
 
-            {/* Usage Insights */}
             <FadeInView delay={0.3}>
               <Card className="p-6">
                 <div className="flex items-center gap-3 mb-4">
