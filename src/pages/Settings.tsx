@@ -147,9 +147,25 @@ const Settings = () => {
     }
 
     try {
+      // Look up legacy user ID from users table (required for logs FK constraint)
+      let userIdForOAuth = user.id;
+      
+      if (phoneNumber) {
+        const { data: legacyUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('phone', phoneNumber)
+          .maybeSingle();
+        
+        if (legacyUser?.id) {
+          userIdForOAuth = legacyUser.id;
+          console.log('Using legacy user ID for OAuth:', userIdForOAuth);
+        }
+      }
+
       const redirectUrl = window.location.href.split('?')[0];
       const { data, error } = await supabase.functions.invoke('auth-google', {
-        body: { userId: user.id, redirectUrl }
+        body: { userId: userIdForOAuth, redirectUrl }
       });
 
       if (error) throw error;
