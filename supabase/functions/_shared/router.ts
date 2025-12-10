@@ -19,6 +19,7 @@ export type RouteDecision =
   | { type: 'document_list' }
   | { type: 'document_recall' }
   | { type: 'web_search' }
+  | { type: 'cancel_action' }
   | { type: 'none' }; // No explicit routing - let AI decide
 
 /**
@@ -28,6 +29,11 @@ export type RouteDecision =
  */
 export function routeMessage(message: string): RouteDecision {
   const msg = message.toLowerCase().trim();
+  
+  // ============= CANCEL/ABORT ROUTING (check early) =============
+  if (matchesCancelPhrases(msg)) {
+    return { type: 'cancel_action' };
+  }
   
   // ============= DAILY BRIEFING =============
   if (matchesBriefingPhrases(msg)) {
@@ -72,6 +78,37 @@ export function routeMessage(message: string): RouteDecision {
   
   // No explicit routing detected - let AI handle
   return { type: 'none' };
+}
+
+/**
+ * Check if message matches cancel/abort phrases
+ */
+export function matchesCancelPhrases(msg: string): boolean {
+  const cancelPhrases = [
+    'cancel that',
+    'cancel',
+    'never mind',
+    'nevermind',
+    'forget it',
+    'forget that',
+    'stop',
+    'abort',
+    'no wait',
+    'no, wait',
+    'actually no',
+    'actually, no',
+    'scratch that',
+    'don\'t do that',
+    'dont do that'
+  ];
+  
+  // Exact match or phrase at start of message
+  return cancelPhrases.some(phrase => 
+    msg === phrase || 
+    msg.startsWith(phrase + ' ') ||
+    msg.startsWith(phrase + ',') ||
+    msg.startsWith(phrase + '.')
+  );
 }
 
 /**
@@ -206,7 +243,24 @@ export function matchesCalendarPhrases(msg: string): RouteDecision | null {
     'calendar tomorrow',
     'any meetings',
     'meetings today',
-    'meetings tomorrow'
+    'meetings tomorrow',
+    // Week phrases
+    'calendar this week',
+    'calendar next week',
+    'this week\'s calendar',
+    'this weeks calendar',
+    'what\'s on my calendar this week',
+    'whats on my calendar this week',
+    'schedule this week',
+    'schedule for the week',
+    'schedule for this week',
+    'meetings this week',
+    'my week ahead',
+    'week\'s schedule',
+    'weeks schedule',
+    'what do i have this week',
+    'what\'s happening this week',
+    'whats happening this week'
   ];
   
   if (readPhrases.some(phrase => msg.includes(phrase))) {
@@ -579,6 +633,8 @@ export function describeRoute(decision: RouteDecision): string {
       return 'Document - Recall Previous';
     case 'web_search':
       return 'Web Search';
+    case 'cancel_action':
+      return 'Cancel - Abort Current Action';
     case 'none':
       return 'No explicit route - AI will decide';
   }
