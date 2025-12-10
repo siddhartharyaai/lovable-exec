@@ -800,44 +800,77 @@ serve(async (req) => {
     
     const hasEmailVerb = emailVerbs.some(verb => msgLower.includes(verb));
     
-    // HARD RULE: If last_doc exists and classified as doc_action, force document handling
-    const lastDoc = finalSessionState?.last_doc;
-    const lastDocSummary = finalSessionState?.last_doc_summary || null;
+    // ============= CONTEXT EXPIRY: Clear stale last_doc (30 min timeout) =============
+    let lastDoc = finalSessionState?.last_doc;
+    let lastDocSummary = finalSessionState?.last_doc_summary || null;
     
-    // Expanded doc phrase detection - covers all natural language doc queries
+    if (lastDoc) {
+      const lastDocTimestamp = lastDoc.uploaded_at ? new Date(lastDoc.uploaded_at) : null;
+      const now = new Date();
+      const DOC_CONTEXT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+      
+      if (lastDocTimestamp && (now.getTime() - lastDocTimestamp.getTime() > DOC_CONTEXT_TIMEOUT_MS)) {
+        console.log(`[${traceId}] ⏰ last_doc expired (>30 min old: ${lastDoc.title}), clearing context`);
+        lastDoc = null;
+        lastDocSummary = null;
+        // Clear in database asynchronously
+        supabase.from('session_state').update({ 
+          last_doc: null, 
+          last_doc_summary: null 
+        }).eq('user_id', userId).then(() => {
+          console.log(`[${traceId}] ✅ Cleared expired last_doc from session_state`);
+        });
+      }
+    }
+    
+    // ============= CENTRALIZED ROUTER FIRST: Check explicit routes BEFORE document detection =============
+    // This ensures "What tasks are pending?" routes to Google Tasks, not document Q&A
+    const routeDecision = routeMessage(finalMessage);
+    console.log(`[${traceId}] 🔀 ROUTER PRIORITY CHECK: ${describeRoute(routeDecision)} for: "${finalMessage}"`);
+    
+    const explicitRoutes = ['tasks', 'calendar_read', 'calendar_create', 'calendar_update', 
+                           'calendar_delete', 'gmail_check', 'gmail_search', 'gmail_mark_read',
+                           'reminder_create', 'reminder_snooze', 'contact_lookup', 'daily_briefing',
+                           'greeting_smalltalk', 'web_search', 'document_list', 'document_recall'];
+    
+    const hasExplicitRoute = explicitRoutes.includes(routeDecision.type);
+    
+    if (hasExplicitRoute) {
+      console.log(`[${traceId}] 🎯 EXPLICIT ROUTE DETECTED: ${routeDecision.type} - BYPASSING document detection`);
+    }
+    
+    // ============= DOCUMENT DETECTION: Only if NO explicit route =============
+    // Cleaned docPhrases - REMOVED generic words that conflict with other intents
     const docPhrases = [
-      // Summaries
-      'summarize', 'summarise', 'summary', 'give me a summary', 'give me the summary',
-      'key takeaways', 'key takeaway', 'key points', 'key point', 'main points', 'main point',
-      'high level summary', 'high level', 'overview', 'brief summary',
-      'bullet points', 'bullet point', 'bullets', 'bullet', 'in bullet points',
+      // Summaries - document-specific
+      'summarize this', 'summarise this', 'summarize the document', 'summarise the document',
+      'give me a summary of this', 'summary of this document',
+      'key takeaways from this', 'key points from this', 'main points from this',
       
-      // Title/naming
-      'title', 'better title', 'new title', 'rename', 'headline', 'suggest a title',
+      // Title/naming - document-specific
+      'suggest a title for this', 'rename this document', 'better title for this',
       
-      // Extraction/Q&A
-      'extract', 'find', 'who is', 'what is', 'where is', 'when is', 'how many',
-      'action items', 'action item', 'tasks', 'task', 'to-do', 'todo', 'to-dos', 'todos',
-      'risks', 'risk', 'opportunities', 'opportunity',
+      // Document-specific extraction
+      'extract from this document', 'action items from this document',
+      'what does this document say', "what's in this document",
       
-      // General doc references
-      'what does this say', "what's this say", 'what is this', 'tell me about this', 
-      'tell me about it', "what's in this", "what's in it", "what's the", 'clean this', 
-      'clean it up', 'analyze this', 'analyze it'
+      // General doc references - require explicit "document/file/pdf" mention
+      'clean this document', 'analyze this document', 'analyze this file',
+      'tell me about this document', 'tell me about this file'
     ];
     
-    // Detect references to "this document" / "the file" / "it"
+    // Detect EXPLICIT references to "this document" / "the file" / "the pdf"
     const docReferences = [
       'this document', 'the document', 'this file', 'the file', 
-      'this pdf', 'the pdf', 'in this', 'in the', 'from this', 'from the',
-      'about this', 'about the', 'of this', 'of the'
+      'this pdf', 'the pdf', 'from the document', 'from the file',
+      'in the document', 'in the file', 'about the document', 'about the file'
     ];
     const hasDocReference = lastDoc && docReferences.some(ref => msgLower.includes(ref));
     
-    // Email verbs ALWAYS override doc detection
-    const isDocAction = !hasEmailVerb && (
+    // Document action ONLY if: no explicit route AND (doc phrase OR explicit doc reference)
+    const isDocAction = !hasExplicitRoute && !hasEmailVerb && lastDoc && (
       classifiedIntent === 'doc_action' || 
-      (lastDoc && docPhrases.some(phrase => msgLower.includes(phrase))) ||
+      docPhrases.some(phrase => msgLower.includes(phrase)) ||
       hasDocReference
     );
     
@@ -855,17 +888,17 @@ serve(async (req) => {
     }
     
     if (isDocAction && lastDoc) {
-      console.log(`[${traceId}] 📄 HARD RULE TRIGGERED: Document action on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}`);
+      console.log(`[${traceId}] 📄 DOCUMENT ACTION: Processing query on last_doc (${lastDoc.title}). Message: "${finalMessage}". ClassifiedIntent: ${classifiedIntent}`);
       
       // Pass the FULL user query to doc handler - let it figure out what to do
       const { data: docResult, error: docError } = await supabase.functions.invoke('handle-document-qna', {
         body: {
           intent: {
-            operation: 'doc_query',           // Generic operation - handler will detect mode
-            query: finalMessage,               // Full natural language query
+            operation: 'doc_query',
+            query: finalMessage,
             documentId: lastDoc.id,
             documentName: lastDoc.title,
-            previousSummary: lastDocSummary    // Pass previous summary for continuations/refinements
+            previousSummary: lastDocSummary
           },
           userId,
           traceId
@@ -874,27 +907,19 @@ serve(async (req) => {
       
       if (docError) {
         console.error(`[${traceId}] 🔥 Document QnA error:`, docError);
-        console.error(`[${traceId}] Error details:`, JSON.stringify(docError, null, 2));
-        
-        // CRITICAL: Always return a user-facing message on tool failure
         const errorMessage = docError.message || 'Document processing failed';
         return new Response(JSON.stringify({ 
           message: `I had trouble processing your document question. ${errorMessage}`
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
-        const message = `I tried to summarize "${lastDoc.title}" but encountered an error. Please try uploading the document again.`;
-        return new Response(JSON.stringify({ message }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
       } else {
-        // BUG FIX 2: Return 'message' field to match what webhook expects
         const message = docResult.answer || docResult.message || `Here's the summary of "${lastDoc.title}":\n\n${docResult.summary || 'Summary not available.'}`;
-        const updatedSummary = docResult.fullSummary || null; // Get the full accumulated summary
+        const updatedSummary = docResult.fullSummary || null;
         console.log(`[${traceId}] Document action completed successfully`);
         return new Response(JSON.stringify({ 
           message,
-          updatedSummary // Pass this back to webhook to update session_state
+          updatedSummary
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -936,12 +961,11 @@ serve(async (req) => {
       console.log(`[${traceId}] 📝 Slot-filling mode active for topic: ${currentTopic}. Treating message as slot value.`);
     }
     
-    // ============= CENTRALIZED ROUTING: Use shared router module BEFORE AI call =============
+    // ============= EXECUTE EXPLICIT ROUTES (routeDecision already computed above) =============
     // Skip routing if we're in slot-filling mode or have a forced/routed intent
-    if (!isSlotFilling && !forcedIntent && !routedIntent) {
-      const routeDecision = routeMessage(finalMessage);
-      console.log(`[${traceId}] 🔀 ROUTER: ${describeRoute(routeDecision)} for: "${finalMessage}"`);
-      
+    if (!isSlotFilling && !forcedIntent && !routedIntent && hasExplicitRoute) {
+      console.log(`[${traceId}] 🔀 EXECUTING explicit route: ${routeDecision.type}`);
+
       // Handle DAILY BRIEFING route
       if (routeDecision.type === 'daily_briefing') {
         console.log(`[${traceId}] 📅 EXECUTING: Daily briefing via centralized router`);
