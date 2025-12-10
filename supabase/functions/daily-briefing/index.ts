@@ -485,18 +485,46 @@ serve(async (req) => {
               const weatherData = await weatherResponse.json();
               const answerBox = weatherData.answer_box;
               
+              // Primary: use answer_box if available
               if (answerBox) {
                 weatherInfo = {
                   temp: answerBox.temperature || 'N/A',
                   condition: answerBox.weather || answerBox.precipitation || 'Unknown',
                   humidity: answerBox.humidity || 'N/A'
                 };
-                console.log(`[${traceId}] Weather: fetched for ${userCity}`);
-              } else {
-                console.log(`[${traceId}] Section skipped: Weather returned no data`);
+                console.log(`[${traceId}] Weather: fetched from answer_box for ${userCity}`);
+              } 
+              // Fallback: try organic_results with weather widget
+              else if (weatherData.organic_results?.[0]?.rich_snippet?.top?.extensions) {
+                const extensions = weatherData.organic_results[0].rich_snippet.top.extensions;
+                weatherInfo = {
+                  temp: extensions.find((e: string) => e.includes('°')) || 'N/A',
+                  condition: extensions.find((e: string) => !e.includes('°') && !e.includes('%')) || 'Unknown',
+                  humidity: extensions.find((e: string) => e.includes('%')) || 'N/A'
+                };
+                console.log(`[${traceId}] Weather: fetched from organic_results fallback for ${userCity}`);
+              }
+              // Fallback: try knowledge_graph
+              else if (weatherData.knowledge_graph?.weather) {
+                const kgWeather = weatherData.knowledge_graph.weather;
+                weatherInfo = {
+                  temp: kgWeather.temperature || 'N/A',
+                  condition: kgWeather.forecast || 'Unknown',
+                  humidity: kgWeather.humidity || 'N/A'
+                };
+                console.log(`[${traceId}] Weather: fetched from knowledge_graph for ${userCity}`);
+              }
+              // Last fallback: just show city with generic info
+              else {
+                console.log(`[${traceId}] Weather: no structured data found, using city default`);
+                weatherInfo = {
+                  temp: 'N/A',
+                  condition: `Check weather for ${userCity}`,
+                  humidity: 'N/A'
+                };
               }
             } else {
-              console.log(`[${traceId}] Section skipped: Weather API returned error`);
+              console.log(`[${traceId}] Section skipped: Weather API returned error ${weatherResponse.status}`);
             }
           } catch (weatherError) {
             console.error(`[${traceId}] Weather fetch error:`, weatherError);

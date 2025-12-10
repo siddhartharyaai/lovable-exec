@@ -1055,18 +1055,49 @@ serve(async (req) => {
         });
       }
       
+      // Handle CANCEL ACTION route
+      if (routeDecision.type === 'cancel_action') {
+        console.log(`[${traceId}] 🚫 EXECUTING: Cancel action - clearing pending state`);
+        
+        // Clear any pending state
+        await supabase.from('session_state').upsert({
+          user_id: userId,
+          pending_slots: null,
+          confirmation_pending: null,
+          pending_disambiguation: null,
+          current_topic: null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        
+        const message = `Got it, cancelled. What would you like to do instead?`;
+        return new Response(JSON.stringify({ message }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
       // Handle CALENDAR READ route
       if (routeDecision.type === 'calendar_read') {
         console.log(`[${traceId}] 📅 EXECUTING: Calendar read via centralized router`);
         
-        // Default to today's calendar
+        // Check if message mentions "this week" for extended range
+        const msgLower = finalMessage.toLowerCase();
+        const isWeekQuery = msgLower.includes('this week') || msgLower.includes('week ahead') || 
+                           msgLower.includes('week\'s') || msgLower.includes('weeks');
+        
         const now = new Date();
         const istOffset = 5.5 * 60 * 60 * 1000;
         const istTime = new Date(now.getTime() + istOffset);
         const todayStart = new Date(istTime);
         todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(istTime);
-        todayEnd.setHours(23, 59, 59, 999);
+        
+        // If week query, extend to 7 days; otherwise just today
+        const rangeEnd = new Date(istTime);
+        if (isWeekQuery) {
+          rangeEnd.setDate(rangeEnd.getDate() + 7);
+          rangeEnd.setHours(23, 59, 59, 999);
+        } else {
+          rangeEnd.setHours(23, 59, 59, 999);
+        }
         
         const calendarResult = await supabase.functions.invoke('handle-calendar', {
           body: { 
@@ -1074,7 +1105,7 @@ serve(async (req) => {
               type: 'calendar_read', 
               entities: { 
                 start_date: todayStart.toISOString(),
-                end_date: todayEnd.toISOString()
+                end_date: rangeEnd.toISOString()
               } 
             },
             userId, 
