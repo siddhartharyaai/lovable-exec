@@ -95,13 +95,28 @@ const Onboarding = () => {
       });
       
       setCurrentStep('google');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving phone:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save phone number",
-        variant: "destructive",
-      });
+      
+      // Detect unique constraint violation (phone already in use)
+      const isPhoneInUse = 
+        error?.code === '23505' || 
+        error?.message?.includes('duplicate key') ||
+        error?.message?.includes('profiles_phone_key');
+      
+      if (isPhoneInUse) {
+        toast({
+          title: "Phone Number Already Registered",
+          description: "This WhatsApp number is already linked to another account. Please sign in to that account or use a different number.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to save phone number",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
