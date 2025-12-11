@@ -147,11 +147,19 @@ serve(async (req) => {
         }
 
         const createdEvent = await response.json();
+        
+        // Verify event was created with ID
+        if (!createdEvent.id) {
+          console.error(`[${traceId}] ⚠️ Calendar event created but no ID returned`);
+        } else {
+          console.log(`[${traceId}] ✅ Calendar event created with ID: ${createdEvent.id}, htmlLink: ${createdEvent.htmlLink}`);
+        }
+        
         message = `📅 Event created: **${title}** on ${startTime.toLocaleString('en-IN', { 
           dateStyle: 'medium', 
           timeStyle: 'short',
           timeZone: intent.tz || 'Asia/Kolkata'
-        })}`;
+        })} IST`;
         
         if (attendees?.length) {
           message += `\n👥 Attendees: ${attendees.join(', ')}`;

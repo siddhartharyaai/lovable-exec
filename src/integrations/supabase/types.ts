@@ -543,6 +543,7 @@ export type Database = {
           pending_intent: Json | null
           pending_slots: Json | null
           recent_actions: Json | null
+          tasks_paging: Json | null
           tasks_snapshot: Json | null
           updated_at: string | null
           user_id: string
@@ -570,6 +571,7 @@ export type Database = {
           pending_intent?: Json | null
           pending_slots?: Json | null
           recent_actions?: Json | null
+          tasks_paging?: Json | null
           tasks_snapshot?: Json | null
           updated_at?: string | null
           user_id: string
@@ -597,6 +599,7 @@ export type Database = {
           pending_intent?: Json | null
           pending_slots?: Json | null
           recent_actions?: Json | null
+          tasks_paging?: Json | null
           tasks_snapshot?: Json | null
           updated_at?: string | null
           user_id?: string

@@ -27,15 +27,25 @@ function renderDailyBriefing({
   let message = `🌅 *Good morning. Your Daily Briefing*\n\n`;
   message += `Here's your briefing for today, ${todayDisplay}.\n\n`;
 
-  // 1. Weather (always show section)
-  if (weatherInfo) {
-    message += `🌤️ *Weather*: ${weatherInfo.city}, ${weatherInfo.highC}, ${weatherInfo.description}`;
-    if (weatherInfo.humidity) {
-      message += `, Humidity ${weatherInfo.humidity}`;
+  // 1. Weather (always show section with city)
+  if (weatherInfo && weatherInfo.city) {
+    // Build weather string with available data
+    let weatherStr = `🌤️ *Weather in ${weatherInfo.city}*: `;
+    if (weatherInfo.highC && weatherInfo.highC !== 'N/A') {
+      weatherStr += `${weatherInfo.highC}`;
+      if (weatherInfo.description && weatherInfo.description !== 'N/A' && !weatherInfo.description.includes('Check weather')) {
+        weatherStr += `, ${weatherInfo.description}`;
+      }
+      if (weatherInfo.humidity && weatherInfo.humidity !== 'N/A') {
+        weatherStr += `, Humidity ${weatherInfo.humidity}`;
+      }
+    } else {
+      // No temp data, show helpful message
+      weatherStr += `Check your local weather app for today's forecast`;
     }
-    message += `.\n\n`;
+    message += weatherStr + `.\n\n`;
   } else {
-    message += `🌤️ *Weather*: No weather data available for today.\n\n`;
+    message += `🌤️ *Weather*: Check your local weather app for today's forecast.\n\n`;
   }
 
   // 2. Calendar (always show section)

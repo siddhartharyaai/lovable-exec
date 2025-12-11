@@ -1,0 +1,1 @@
+ALTER TABLE session_state ADD COLUMN IF NOT EXISTS tasks_paging JSONB;
