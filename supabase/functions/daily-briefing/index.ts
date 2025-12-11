@@ -481,29 +481,60 @@ serve(async (req) => {
           console.log(`[${traceId}] Section disabled: Reminders`);
         }
 
-        // Fetch weather forecast using SERP API (if enabled)
-        const serpApiKey = Deno.env.get('SERP_API_KEY');
+        // Fetch weather forecast using SearchAPI.io (if enabled)
+        const searchApiKey = Deno.env.get('SEARCHAPI_KEY');
         let weatherInfo = null;
         
-        if (sections.weather && serpApiKey) {
+        if (sections.weather && searchApiKey) {
           try {
-            const weatherResponse = await fetch(
-              `https://serpapi.com/search.json?engine=google&q=weather+${encodeURIComponent(userCity)}+today&api_key=${serpApiKey}`
-            );
+            // SearchAPI.io Google Weather endpoint
+            const weatherUrl = new URL('https://www.searchapi.io/api/v1/search');
+            weatherUrl.searchParams.append('engine', 'google');
+            weatherUrl.searchParams.append('q', `weather ${userCity} today`);
+            weatherUrl.searchParams.append('api_key', searchApiKey);
+            weatherUrl.searchParams.append('gl', 'in');
+            weatherUrl.searchParams.append('hl', 'en');
+            
+            console.log(`[${traceId}] Weather API URL: ${weatherUrl.toString().replace(searchApiKey, 'REDACTED')}`);
+            
+            const weatherResponse = await fetch(weatherUrl.toString());
             
             if (weatherResponse.ok) {
               const weatherData = await weatherResponse.json();
+              console.log(`[${traceId}] Weather response keys:`, Object.keys(weatherData));
+              
+              // SearchAPI.io returns weather in weather_result field
+              const weatherResult = weatherData.weather_result;
               const answerBox = weatherData.answer_box;
               
-              // Primary: use answer_box if available
-              if (answerBox) {
+              // Primary: use weather_result (SearchAPI.io specific)
+              if (weatherResult) {
+                // SearchAPI.io returns temp as object {fahrenheit: 86, celsius: 30}
+                let tempValue = 'N/A';
+                if (weatherResult.temp?.celsius) {
+                  tempValue = `${weatherResult.temp.celsius}°C`;
+                } else if (typeof weatherResult.temperature === 'string') {
+                  tempValue = weatherResult.temperature;
+                } else if (weatherResult.temperature?.celsius) {
+                  tempValue = `${weatherResult.temperature.celsius}°C`;
+                }
+                
                 weatherInfo = {
-                  temp: answerBox.temperature || 'N/A',
-                  condition: answerBox.weather || answerBox.precipitation || 'Unknown',
+                  temp: tempValue,
+                  condition: weatherResult.condition || weatherResult.weather || 'Unknown',
+                  humidity: weatherResult.humidity || 'N/A'
+                };
+                console.log(`[${traceId}] Weather: fetched from weather_result for ${userCity}: ${JSON.stringify(weatherInfo)}`);
+              }
+              // Fallback: try answer_box 
+              else if (answerBox) {
+                weatherInfo = {
+                  temp: answerBox.temperature || answerBox.temp || 'N/A',
+                  condition: answerBox.weather || answerBox.condition || answerBox.description || 'Unknown',
                   humidity: answerBox.humidity || 'N/A'
                 };
-                console.log(`[${traceId}] Weather: fetched from answer_box for ${userCity}`);
-              } 
+                console.log(`[${traceId}] Weather: fetched from answer_box for ${userCity}: ${JSON.stringify(weatherInfo)}`);
+              }
               // Fallback: try organic_results with weather widget
               else if (weatherData.organic_results?.[0]?.rich_snippet?.top?.extensions) {
                 const extensions = weatherData.organic_results[0].rich_snippet.top.extensions;
@@ -526,7 +557,7 @@ serve(async (req) => {
               }
               // Last fallback: just show city with generic info
               else {
-                console.log(`[${traceId}] Weather: no structured data found, using city default`);
+                console.log(`[${traceId}] Weather: no structured data found in response, raw:`, JSON.stringify(weatherData).substring(0, 500));
                 weatherInfo = {
                   temp: 'N/A',
                   condition: `Check weather for ${userCity}`,
@@ -534,7 +565,8 @@ serve(async (req) => {
                 };
               }
             } else {
-              console.log(`[${traceId}] Section skipped: Weather API returned error ${weatherResponse.status}`);
+              const errorText = await weatherResponse.text();
+              console.log(`[${traceId}] Section skipped: Weather API returned error ${weatherResponse.status}: ${errorText.substring(0, 200)}`);
             }
           } catch (weatherError) {
             console.error(`[${traceId}] Weather fetch error:`, weatherError);
@@ -542,23 +574,33 @@ serve(async (req) => {
         } else {
           if (!sections.weather) {
             console.log(`[${traceId}] Section disabled: Weather`);
-          } else if (!serpApiKey) {
-            console.log(`[${traceId}] Section skipped: Weather - SERP_API_KEY not configured`);
+          } else if (!searchApiKey) {
+            console.log(`[${traceId}] Section skipped: Weather - SEARCHAPI_KEY not configured`);
           }
         }
 
-        // Fetch top 5 news headlines using SERP API (if enabled)
+        // Fetch top 5 news headlines using SearchAPI.io (if enabled)
         let newsHeadlines: string[] = [];
         
-        if (sections.news && serpApiKey) {
+        if (sections.news && searchApiKey) {
           try {
-            const newsResponse = await fetch(
-              `https://serpapi.com/search.json?engine=google_news&q=top+news+India+today&api_key=${serpApiKey}`
-            );
+            // SearchAPI.io Google News endpoint
+            const newsUrl = new URL('https://www.searchapi.io/api/v1/search');
+            newsUrl.searchParams.append('engine', 'google_news');
+            newsUrl.searchParams.append('q', 'top news India today');
+            newsUrl.searchParams.append('api_key', searchApiKey);
+            newsUrl.searchParams.append('gl', 'in');
+            newsUrl.searchParams.append('hl', 'en');
+            
+            console.log(`[${traceId}] News API URL: ${newsUrl.toString().replace(searchApiKey, 'REDACTED')}`);
+            
+            const newsResponse = await fetch(newsUrl.toString());
             
             if (newsResponse.ok) {
               const newsData = await newsResponse.json();
-              const newsResults = newsData.news_results || [];
+              console.log(`[${traceId}] News response keys:`, Object.keys(newsData));
+              
+              const newsResults = newsData.news_results || newsData.organic_results || [];
               
               newsHeadlines = newsResults.slice(0, 5).map((item: any) => 
                 item.title || item.snippet || ''
@@ -570,7 +612,8 @@ serve(async (req) => {
                 console.log(`[${traceId}] Section skipped: News returned 0 headlines`);
               }
             } else {
-              console.log(`[${traceId}] Section skipped: News API returned error`);
+              const errorText = await newsResponse.text();
+              console.log(`[${traceId}] Section skipped: News API returned error ${newsResponse.status}: ${errorText.substring(0, 200)}`);
             }
           } catch (newsError) {
             console.error(`[${traceId}] News fetch error:`, newsError);
@@ -578,8 +621,8 @@ serve(async (req) => {
         } else {
           if (!sections.news) {
             console.log(`[${traceId}] Section disabled: News`);
-          } else if (!serpApiKey) {
-            console.log(`[${traceId}] Section skipped: News - SERP_API_KEY not configured`);
+          } else if (!searchApiKey) {
+            console.log(`[${traceId}] Section skipped: News - SEARCHAPI_KEY not configured`);
           }
         }
 
