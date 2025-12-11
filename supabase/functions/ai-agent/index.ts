@@ -781,22 +781,23 @@ serve(async (req) => {
     if (classifiedIntent === 'greeting_smalltalk') {
       console.log(`[${traceId}] ✅ Returning personalized Man Friday greeting for user ${userId}`);
       
-      // Fetch user's name from profiles table for personalization
+      // Fetch user's name from USERS table (legacy WhatsApp system) - NOT profiles table
+      // WhatsApp webhook passes legacy userId, not Auth profile ID
       let userName = '';
       try {
-        const { data: profile } = await supabase
-          .from('profiles')
+        const { data: userData } = await supabase
+          .from('users')
           .select('name')
           .eq('id', userId)
           .single();
         
-        if (profile?.name) {
+        if (userData?.name) {
           // Extract first name only
-          userName = profile.name.split(' ')[0];
-          console.log(`[${traceId}] Found user name: ${userName}`);
+          userName = userData.name.split(' ')[0];
+          console.log(`[${traceId}] Found user name from users table: ${userName}`);
         }
       } catch (e) {
-        console.log(`[${traceId}] Could not fetch profile name, using generic greeting`);
+        console.log(`[${traceId}] Could not fetch user name, using generic greeting`);
       }
       
       const greeting = userName 
@@ -1102,10 +1103,13 @@ serve(async (req) => {
       if (routeDecision.type === 'calendar_read') {
         console.log(`[${traceId}] 📅 EXECUTING: Calendar read via centralized router`);
         
-        // Check if message mentions "this week" for extended range
+        // Check if message mentions "this week" or "next X days" for extended range
         const msgLower = finalMessage.toLowerCase();
         const isWeekQuery = msgLower.includes('this week') || msgLower.includes('week ahead') || 
-                           msgLower.includes('week\'s') || msgLower.includes('weeks');
+                           msgLower.includes('week\'s') || msgLower.includes('weeks') ||
+                           msgLower.includes('next 7 days') || msgLower.includes('next seven days') ||
+                           msgLower.includes('coming week') || msgLower.includes('upcoming week') ||
+                           msgLower.includes('for the next') || msgLower.includes('for the week');
         
         const now = new Date();
         const istOffset = 5.5 * 60 * 60 * 1000;
@@ -1132,7 +1136,8 @@ serve(async (req) => {
               } 
             },
             userId, 
-            traceId
+            traceId,
+            action: 'read' // CRITICAL: handle-calendar uses switch(action)
           }
         });
         
