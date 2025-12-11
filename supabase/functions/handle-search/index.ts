@@ -17,7 +17,7 @@ serve(async (req) => {
     
     console.log(`[${traceId}] Web search initiated: "${query}", type: ${searchType}`);
 
-    const serpApiKey = Deno.env.get('SERP_API_KEY'); // SearchAPI.io key
+    const searchApiKey = Deno.env.get('SEARCHAPI_KEY');
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
@@ -95,8 +95,8 @@ serve(async (req) => {
       // Use SearchAPI.io for fast, general searches (news, weather, scores, quick facts)
       console.log(`[${traceId}] Using SearchAPI.io for general search`);
       
-      if (!serpApiKey) {
-        throw new Error('SERP_API_KEY not configured');
+      if (!searchApiKey) {
+        throw new Error('SEARCHAPI_KEY not configured');
       }
       
       // Build SearchAPI.io request
@@ -104,12 +104,12 @@ serve(async (req) => {
       const searchApiUrl = new URL('https://www.searchapi.io/api/v1/search');
       searchApiUrl.searchParams.append('engine', 'google');
       searchApiUrl.searchParams.append('q', query);
-      searchApiUrl.searchParams.append('api_key', serpApiKey);
+      searchApiUrl.searchParams.append('api_key', searchApiKey);
       searchApiUrl.searchParams.append('num', '10'); // Number of results
       searchApiUrl.searchParams.append('gl', 'in'); // Country: India
       searchApiUrl.searchParams.append('hl', 'en'); // Language: English
       
-      console.log(`[${traceId}] SearchAPI.io URL: ${searchApiUrl.toString().replace(serpApiKey, 'REDACTED')}`);
+      console.log(`[${traceId}] SearchAPI.io URL: ${searchApiUrl.toString().replace(searchApiKey, 'REDACTED')}`);
       
       const searchResponse = await fetch(searchApiUrl.toString());
 
