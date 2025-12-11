@@ -777,10 +777,33 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // FIX 1: Handle greeting_smalltalk with branded intro
+    // FIX 1: Handle greeting_smalltalk with personalized branded intro
     if (classifiedIntent === 'greeting_smalltalk') {
-      console.log(`[${traceId}] ✅ Returning branded Man Friday greeting`);
-      const message = "I am Man Friday, your AI executive assistant. I can help you with your calendar, emails, tasks, reminders, and documents, all from WhatsApp. How can I assist you today?";
+      console.log(`[${traceId}] ✅ Returning personalized Man Friday greeting for user ${userId}`);
+      
+      // Fetch user's name from profiles table for personalization
+      let userName = '';
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', userId)
+          .single();
+        
+        if (profile?.name) {
+          // Extract first name only
+          userName = profile.name.split(' ')[0];
+          console.log(`[${traceId}] Found user name: ${userName}`);
+        }
+      } catch (e) {
+        console.log(`[${traceId}] Could not fetch profile name, using generic greeting`);
+      }
+      
+      const greeting = userName 
+        ? `Hello ${userName}! I am Man Friday, your AI executive assistant.`
+        : `Hello! I am Man Friday, your AI executive assistant.`;
+      
+      const message = `${greeting} I can help you with your calendar, emails, tasks, reminders, and documents, all from WhatsApp. How can I assist you today?`;
       return new Response(JSON.stringify({ message }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

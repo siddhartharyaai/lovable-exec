@@ -260,7 +260,23 @@ export function matchesCalendarPhrases(msg: string): RouteDecision | null {
     'weeks schedule',
     'what do i have this week',
     'what\'s happening this week',
-    'whats happening this week'
+    'whats happening this week',
+    // Explicit "next X days" patterns
+    'next 7 days',
+    'next seven days',
+    'next 7 day',
+    'coming 7 days',
+    'coming week',
+    'upcoming 7 days',
+    'upcoming week',
+    'for the week',
+    'this coming week',
+    'for the next 7 days',
+    'for the next seven days',
+    'calendar for the next 7 days',
+    'calendar for the next seven days',
+    'what\'s on my calendar for the next 7 days',
+    'whats on my calendar for the next 7 days'
   ];
   
   if (readPhrases.some(phrase => msg.includes(phrase))) {
