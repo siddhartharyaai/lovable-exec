@@ -127,3 +127,6 @@ verify_jwt = false
 
 [functions.handle-document-qna]
 verify_jwt = false
+
+[functions.read-drive-document]
+verify_jwt = false
