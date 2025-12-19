@@ -9,10 +9,19 @@ interface ConnectionHealthProps {
   isGoogleConnected: boolean;
   isLoading: boolean;
   onRefresh: () => void;
+  phoneNumber?: string;
+  lastSyncTime?: string;
 }
 
-export const ConnectionHealth = ({ isGoogleConnected, isLoading, onRefresh }: ConnectionHealthProps) => {
-  const healthScore = isGoogleConnected ? 100 : 50;
+export const ConnectionHealth = ({ 
+  isGoogleConnected, 
+  isLoading, 
+  onRefresh,
+  phoneNumber,
+  lastSyncTime 
+}: ConnectionHealthProps) => {
+  const isWhatsAppConnected = Boolean(phoneNumber);
+  const healthScore = (isGoogleConnected ? 50 : 0) + (isWhatsAppConnected ? 50 : 0);
   
   return (
     <motion.div
@@ -49,25 +58,36 @@ export const ConnectionHealth = ({ isGoogleConnected, isLoading, onRefresh }: Co
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <MessageSquare className="w-5 h-5 text-success" />
+                  <MessageSquare className={`w-5 h-5 ${isWhatsAppConnected ? 'text-success' : 'text-muted-foreground'}`} />
                   <div>
                     <p className="text-sm font-medium">WhatsApp</p>
-                    <p className="text-xs text-muted-foreground">Active</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isWhatsAppConnected ? phoneNumber : 'Not configured'}
+                    </p>
                   </div>
                 </div>
-                <Badge variant="secondary" className="bg-success/10 text-success">
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  Connected
-                </Badge>
+                {isWhatsAppConnected ? (
+                  <Badge variant="secondary" className="bg-success/10 text-success">
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Connected
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="bg-destructive/10 text-destructive">
+                    <XCircle className="w-3 h-3 mr-1" />
+                    Setup Required
+                  </Badge>
+                )}
               </div>
 
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-primary" />
+                  <Mail className={`w-5 h-5 ${isGoogleConnected ? 'text-primary' : 'text-muted-foreground'}`} />
                   <div>
                     <p className="text-sm font-medium">Google Workspace</p>
                     <p className="text-xs text-muted-foreground">
-                      {isGoogleConnected ? 'Last synced 5 mins ago' : 'Not connected'}
+                      {isGoogleConnected 
+                        ? (lastSyncTime ? `Last synced ${lastSyncTime}` : 'Connected') 
+                        : 'Not connected'}
                     </p>
                   </div>
                 </div>

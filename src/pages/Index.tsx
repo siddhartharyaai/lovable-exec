@@ -93,7 +93,7 @@ const Index = () => {
             className="inline-flex items-center gap-2 px-4 py-2 mb-6 bg-primary/10 border border-primary/20 rounded-full backdrop-blur-sm"
           >
             <Bot className="w-4 h-4 text-primary animate-float" />
-            <span className="text-sm font-medium text-primary">Powered by Lovable AI</span>
+            <span className="text-sm font-medium text-primary">AI Executive Assistant</span>
           </motion.div>
           
           <motion.h1
@@ -299,7 +299,7 @@ const Index = () => {
                 Privacy Policy
               </button>
               <button 
-                onClick={() => navigate('/privacy')}
+                onClick={() => navigate('/terms')}
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
                 Terms of Service

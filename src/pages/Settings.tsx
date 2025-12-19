@@ -467,7 +467,23 @@ const Settings = () => {
               <Switch
                 id="daily-briefing"
                 checked={dailyBriefing}
-                onCheckedChange={setDailyBriefing}
+                onCheckedChange={async (checked) => {
+                  setDailyBriefing(checked);
+                  try {
+                    await handleSaveProfile({ daily_briefing_enabled: checked });
+                    toast({
+                      title: checked ? "Daily Briefing Enabled" : "Daily Briefing Disabled",
+                      description: checked ? "You'll receive morning briefings at your configured time" : "Morning briefings are now turned off",
+                    });
+                  } catch (error) {
+                    setDailyBriefing(!checked); // Revert on error
+                    toast({
+                      title: "Failed to save setting",
+                      description: "Please try again",
+                      variant: "destructive",
+                    });
+                  }
+                }}
               />
             </div>
 
@@ -484,7 +500,23 @@ const Settings = () => {
               <Switch
                 id="birthday-reminders"
                 checked={birthdayReminders}
-                onCheckedChange={setBirthdayReminders}
+                onCheckedChange={async (checked) => {
+                  setBirthdayReminders(checked);
+                  try {
+                    await handleSaveProfile({ birthday_reminders_enabled: checked });
+                    toast({
+                      title: checked ? "Birthday Reminders Enabled" : "Birthday Reminders Disabled",
+                      description: checked ? "You'll be notified about upcoming birthdays" : "Birthday reminders are now turned off",
+                    });
+                  } catch (error) {
+                    setBirthdayReminders(!checked); // Revert on error
+                    toast({
+                      title: "Failed to save setting",
+                      description: "Please try again",
+                      variant: "destructive",
+                    });
+                  }
+                }}
               />
             </div>
 
