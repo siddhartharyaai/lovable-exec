@@ -204,10 +204,10 @@ const Dashboard = () => {
     navigate('/');
   };
 
-  const totalInteractions = recentMessages.length;
-  const tasksCompleted = upcomingReminders.filter(r => r.status === 'sent').length;
-  const avgResponseTime = 1.2;
-  const timeSaved = Math.floor(totalInteractions * 5 / 60);
+  const totalInteractions = weeklyStats.messagesCount;
+  const remindersCompleted = weeklyStats.remindersCount;
+  const emailDraftsCreated = weeklyStats.emailDraftsCount;
+  const timeSaved = Math.max(1, Math.floor((totalInteractions + remindersCompleted + emailDraftsCreated) * 2 / 60));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/5 to-accent/5">
@@ -265,8 +265,8 @@ const Dashboard = () => {
               trend={12}
             />
             <StatsCard
-              title="Tasks Completed"
-              value={tasksCompleted}
+              title="Reminders Set"
+              value={remindersCompleted}
               icon={CheckCircle}
               trend={8}
             />
@@ -278,10 +278,9 @@ const Dashboard = () => {
               suffix="h"
             />
             <StatsCard
-              title="Avg Response"
-              value={avgResponseTime}
+              title="Email Drafts"
+              value={emailDraftsCreated}
               icon={TrendingUp}
-              suffix="s"
             />
           </div>
         </FadeInView>
@@ -357,6 +356,7 @@ const Dashboard = () => {
               isGoogleConnected={isGoogleConnected}
               isLoading={isLoadingConnections}
               onRefresh={checkConnections}
+              phoneNumber={profile?.phone}
             />
             
             <EnhancedRemindersCard

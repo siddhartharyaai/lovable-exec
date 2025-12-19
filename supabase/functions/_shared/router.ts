@@ -15,6 +15,7 @@ export type RouteDecision =
   | { type: 'reminder_create' }
   | { type: 'reminder_snooze' }
   | { type: 'contact_lookup' }
+  | { type: 'drive_search' }
   | { type: 'document_qna' }
   | { type: 'document_list' }
   | { type: 'document_recall' }
@@ -68,6 +69,11 @@ export function routeMessage(message: string): RouteDecision {
   const contactRoute = matchesContactPhrases(msg);
   if (contactRoute) {
     return contactRoute;
+  }
+  
+  // ============= DRIVE SEARCH ROUTING =============
+  if (matchesDriveSearchPhrases(msg)) {
+    return { type: 'drive_search' };
   }
   
   // ============= DOCUMENT ROUTING =============
@@ -518,6 +524,37 @@ export function extractContactName(msg: string): string | null {
 }
 
 /**
+ * Check if message matches Google Drive search phrases
+ */
+export function matchesDriveSearchPhrases(msg: string): boolean {
+  const driveSearchPhrases = [
+    'find in drive',
+    'search drive',
+    'search my drive',
+    'search google drive',
+    'search in drive',
+    'find in google drive',
+    'locate in drive',
+    'locate in google drive',
+    'find my file',
+    'find the file',
+    'where is the document',
+    'where is my document',
+    'find document in drive',
+    'search for document',
+    'look for file in drive',
+    'look for document in drive',
+    'drive search',
+    'search my files',
+    'find file called',
+    'find document called',
+    'locate file'
+  ];
+  
+  return driveSearchPhrases.some(phrase => msg.includes(phrase));
+}
+
+/**
  * Check if message matches document Q&A phrases
  */
 export function matchesDocumentPhrases(msg: string): RouteDecision | null {
@@ -647,6 +684,8 @@ export function describeRoute(decision: RouteDecision): string {
       return 'Document - List Uploaded';
     case 'document_recall':
       return 'Document - Recall Previous';
+    case 'drive_search':
+      return 'Drive - Search Files';
     case 'web_search':
       return 'Web Search';
     case 'cancel_action':
