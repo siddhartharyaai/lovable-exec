@@ -14,6 +14,12 @@
 
 console.log('🧪 Running Man Friday validation tests...\n');
 
-// This is just a wrapper - the actual test runner is vitest
-// Run: npx vitest
-// or add "test": "vitest" to package.json scripts
+const { spawnSync } = require('node:child_process');
+
+const result = spawnSync('npx', ['vitest', 'run'], {
+  stdio: 'inherit',
+  shell: true,
+});
+
+process.exit(typeof result.status === 'number' ? result.status : 1);
+

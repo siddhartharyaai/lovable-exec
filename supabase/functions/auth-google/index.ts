@@ -66,7 +66,7 @@ serve(async (req) => {
     const { error: insertError } = await supabase.from('logs').insert({
       user_id: userId,
       type: 'oauth_verifier',
-      payload: { code_verifier: codeVerifier },
+      payload: { code_verifier: codeVerifier, redirect_url: normalizedRedirectUrl },
       trace_id: attemptId,
     });
 

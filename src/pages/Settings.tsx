@@ -127,16 +127,34 @@ const Settings = () => {
     if (user) {
       checkGoogleConnection();
     }
-    
-    // Check for connection callback
+
+    // Check for connection callback (success or error)
     const params = new URLSearchParams(window.location.search);
+    const attemptId = params.get('attemptId') || params.get('attempt_id');
+
     if (params.get('connected') === 'google') {
       toast({
         title: "Google Connected",
-        description: "Your Google account has been successfully connected!",
+        description: attemptId
+          ? `Your Google account has been successfully connected. (Attempt ${attemptId})`
+          : "Your Google account has been successfully connected!",
       });
       window.history.replaceState({}, '', '/settings');
       setTimeout(() => checkGoogleConnection(), 500);
+      return;
+    }
+
+    if (params.get('oauth_error') === 'google') {
+      const reason = params.get('reason') || 'unknown_error';
+      const description = params.get('description') || reason;
+
+      toast({
+        title: "Google Connection Failed",
+        description: attemptId ? `${description} (Attempt ${attemptId})` : description,
+        variant: "destructive",
+      });
+
+      window.history.replaceState({}, '', '/settings');
     }
   }, [user]);
 
