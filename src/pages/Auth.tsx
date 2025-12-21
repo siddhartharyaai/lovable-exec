@@ -21,7 +21,7 @@ const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { signIn, signUp, user, profile, isLoading: authLoading } = useAuth();
+  const { signIn, signUp, user, profile, isLoading: authLoading, profileLoading } = useAuth();
 
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
@@ -30,10 +30,23 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string }>({});
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated - wait for profile to load before deciding
   if (!authLoading && user) {
+    // If profile is still loading, wait before redirecting
+    if (profileLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <p className="text-muted-foreground">Loading your profile...</p>
+          </div>
+        </div>
+      );
+    }
+    
     const from = (location.state as any)?.from?.pathname || '/dashboard';
-    if (profile?.onboarding_completed) {
+    // Only redirect to onboarding if profile exists AND onboarding is not completed
+    if (profile && profile.onboarding_completed) {
       navigate(from, { replace: true });
     } else {
       navigate('/onboarding', { replace: true });

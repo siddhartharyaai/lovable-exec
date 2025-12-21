@@ -22,6 +22,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   isLoading: boolean;
+  profileLoading: boolean;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -35,8 +36,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const fetchProfile = async (userId: string) => {
+    setProfileLoading(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -53,6 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('Error in fetchProfile:', err);
       return null;
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -72,11 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Defer profile fetch to avoid deadlock
         if (session?.user) {
+          setProfileLoading(true);
           setTimeout(() => {
             fetchProfile(session.user.id).then(setProfile);
           }, 0);
         } else {
           setProfile(null);
+          setProfileLoading(false);
         }
       }
     );
@@ -139,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         profile,
         isLoading,
+        profileLoading,
         signUp,
         signIn,
         signOut,
