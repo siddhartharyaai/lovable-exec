@@ -304,14 +304,12 @@ const Index = () => {
               >
                 Terms of Service
               </button>
-              <a 
-                href="https://docs.lovable.dev"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button 
+                onClick={() => navigate('/dashboard')}
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Documentation
-              </a>
+                Dashboard
+              </button>
             </div>
           </div>
         </div>
