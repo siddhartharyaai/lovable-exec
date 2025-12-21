@@ -22,6 +22,7 @@ const Settings = () => {
   const [legacyUserId, setLegacyUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
+  const [city, setCity] = useState("Mumbai");
   const [isSavingCity, setIsSavingCity] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [briefingTime, setBriefingTime] = useState("08:00");
@@ -59,41 +60,61 @@ const Settings = () => {
       setIsLoadingGoogle(false);
       return;
     }
-    
+
     try {
-      // First check oauth_tokens with auth user id
+      // 1) Direct check (some installs may store tokens against auth user id)
       const { data: tokenData } = await supabase
         .from('oauth_tokens')
         .select('id')
         .eq('user_id', user.id)
         .eq('provider', 'google')
         .maybeSingle();
-      
+
       if (tokenData) {
         setIsGoogleConnected(true);
         setIsLoadingGoogle(false);
         return;
       }
 
-      // Fallback: check via phone in legacy users table
-      if (phoneNumber) {
-        const { data: userData } = await supabase
+      // 2) Resolve the "backend user" id deterministically
+      // Prefer auth_user_id mapping (does not depend on profile.phone being loaded).
+      let resolvedLegacyUserId: string | null = null;
+
+      const { data: byAuthUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      if (byAuthUser?.id) {
+        resolvedLegacyUserId = byAuthUser.id;
+      } else if (phoneNumber) {
+        const { data: byPhone } = await supabase
           .from('users')
           .select('id')
           .eq('phone', phoneNumber)
           .maybeSingle();
 
-        if (userData) {
-          setLegacyUserId(userData.id);
-          const { data: legacyToken } = await supabase
-            .from('oauth_tokens')
-            .select('id')
-            .eq('user_id', userData.id)
-            .eq('provider', 'google')
-            .maybeSingle();
-          setIsGoogleConnected(!!legacyToken);
-        }
+        if (byPhone?.id) resolvedLegacyUserId = byPhone.id;
       }
+
+      if (resolvedLegacyUserId) {
+        setLegacyUserId(resolvedLegacyUserId);
+
+        const { data: legacyToken } = await supabase
+          .from('oauth_tokens')
+          .select('id')
+          .eq('user_id', resolvedLegacyUserId)
+          .eq('provider', 'google')
+          .maybeSingle();
+
+        setIsGoogleConnected(!!legacyToken);
+        setIsLoadingGoogle(false);
+        return;
+      }
+
+      // No backend user row found → treat as not connected.
+      setIsGoogleConnected(false);
     } catch (err) {
       console.error('Error checking Google connection:', err);
       setIsGoogleConnected(false);
@@ -150,20 +171,34 @@ const Settings = () => {
 
     setIsConnectingGoogle(true);
     try {
-      // Look up legacy user ID from users table (required for logs FK constraint)
-      let userIdForOAuth = user.id;
+      // Resolve backend user ID (required for logs FK constraint in OAuth flow)
+      let userIdForOAuth: string | null = null;
 
-      if (phoneNumber) {
-        const { data: legacyUser } = await supabase
+      const { data: byAuthUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      if (byAuthUser?.id) {
+        userIdForOAuth = byAuthUser.id;
+      } else if (phoneNumber) {
+        const { data: byPhone } = await supabase
           .from('users')
           .select('id')
           .eq('phone', phoneNumber)
           .maybeSingle();
 
-        if (legacyUser?.id) {
-          userIdForOAuth = legacyUser.id;
-          console.log('Using legacy user ID for OAuth:', userIdForOAuth);
-        }
+        if (byPhone?.id) userIdForOAuth = byPhone.id;
+      }
+
+      if (!userIdForOAuth) {
+        toast({
+          title: "Can't start Google connection",
+          description: "Your account isn't fully linked yet. Please complete WhatsApp onboarding, then retry.",
+          variant: "destructive",
+        });
+        return;
       }
 
       const redirectUrl = window.location.href.split('?')[0];
