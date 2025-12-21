@@ -13,12 +13,31 @@ serve(async (req) => {
 
   try {
     const { userId, redirectUrl } = await req.json();
-    
+
     const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
-    const appBaseUrl = Deno.env.get('SUPABASE_URL')?.replace('//', '//') || '';
-    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     if (!clientId) {
       throw new Error('Google OAuth not configured');
+    }
+
+    // Normalize redirect URL to an absolute URL so the callback can always send the user back to the app.
+    const originHeader = req.headers.get('origin');
+    const normalizedRedirectUrl = (() => {
+      try {
+        if (redirectUrl && /^https?:\/\//.test(redirectUrl)) return redirectUrl;
+        if (originHeader && redirectUrl) return new URL(redirectUrl, originHeader).toString();
+        if (originHeader) return new URL('/settings', originHeader).toString();
+        return redirectUrl;
+      } catch {
+        return redirectUrl;
+      }
+    })();
+
+    if (!normalizedRedirectUrl || !/^https?:\/\//.test(normalizedRedirectUrl)) {
+      throw new Error('Invalid redirect URL');
     }
 
     // Generate PKCE code verifier and challenge
@@ -31,35 +50,32 @@ serve(async (req) => {
       .replace(/\//g, '_')
       .replace(/=/g, '');
 
-    // Store code verifier in session
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Attempt identifier (prevents "Invalid code verifier" when users retry / double-click)
+    const attemptId = crypto.randomUUID();
 
-    // Delete any existing verifiers for this user first to avoid conflicts
+    // Prune stale verifiers (keep recent ones so parallel attempts don't overwrite each other)
+    const cutoffIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     await supabase
       .from('logs')
       .delete()
       .eq('user_id', userId)
-      .eq('type', 'oauth_verifier');
+      .eq('type', 'oauth_verifier')
+      .lt('created_at', cutoffIso);
 
-    // Generate a unique trace ID for this auth attempt
-    const traceId = crypto.randomUUID();
-    
-    // Store new verifier with trace ID
+    // Store verifier for this attempt (keyed by trace_id = attemptId)
     const { error: insertError } = await supabase.from('logs').insert({
       user_id: userId,
       type: 'oauth_verifier',
-      payload: { code_verifier: codeVerifier, trace_id: traceId },
-      trace_id: traceId,
+      payload: { code_verifier: codeVerifier },
+      trace_id: attemptId,
     });
-    
+
     if (insertError) {
       console.error('Failed to store code verifier:', insertError);
       throw new Error('Failed to initiate OAuth flow');
     }
-    
-    console.log(`[${traceId}] Stored code verifier for user ${userId}`);
+
+    console.log(`[${attemptId}] Stored code verifier for user ${userId}`);
 
     const scopes = [
       'https://www.googleapis.com/auth/userinfo.email',
@@ -74,9 +90,9 @@ serve(async (req) => {
       'https://www.googleapis.com/auth/drive.readonly',
     ].join(' ');
 
+    const appBaseUrl = supabaseUrl;
     const callbackUrl = `${appBaseUrl}/functions/v1/auth-google-callback`;
-    const state = btoa(JSON.stringify({ userId, redirectUrl }));
-
+    const state = btoa(JSON.stringify({ userId, redirectUrl: normalizedRedirectUrl, attemptId }));
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', clientId);
     authUrl.searchParams.set('redirect_uri', callbackUrl);

@@ -18,10 +18,10 @@ const Settings = () => {
   const [birthdayReminders, setBirthdayReminders] = useState(true);
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(true);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [legacyUserId, setLegacyUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
-  const [city, setCity] = useState("Mumbai");
   const [isSavingCity, setIsSavingCity] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [briefingTime, setBriefingTime] = useState("08:00");
@@ -146,17 +146,20 @@ const Settings = () => {
       return;
     }
 
+    if (isConnectingGoogle) return;
+
+    setIsConnectingGoogle(true);
     try {
       // Look up legacy user ID from users table (required for logs FK constraint)
       let userIdForOAuth = user.id;
-      
+
       if (phoneNumber) {
         const { data: legacyUser } = await supabase
           .from('users')
           .select('id')
           .eq('phone', phoneNumber)
           .maybeSingle();
-        
+
         if (legacyUser?.id) {
           userIdForOAuth = legacyUser.id;
           console.log('Using legacy user ID for OAuth:', userIdForOAuth);
@@ -169,7 +172,7 @@ const Settings = () => {
       });
 
       if (error) throw error;
-      
+
       if (data?.authUrl) {
         toast({
           title: "Redirecting to Google",
@@ -184,6 +187,8 @@ const Settings = () => {
         description: error instanceof Error ? error.message : "Failed to connect Google account",
         variant: "destructive",
       });
+    } finally {
+      setIsConnectingGoogle(false);
     }
   };
 
@@ -423,8 +428,8 @@ const Settings = () => {
                   Disconnect
                 </Button>
               ) : (
-                <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle}>
-                  {isLoadingGoogle ? 'Checking...' : 'Connect Google'}
+                <Button onClick={handleConnectGoogle} disabled={isLoadingGoogle || isConnectingGoogle}>
+                  {isLoadingGoogle ? 'Checking...' : isConnectingGoogle ? 'Connecting...' : 'Connect Google'}
                 </Button>
               )}
             </div>
