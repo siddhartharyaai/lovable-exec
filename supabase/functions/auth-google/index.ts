@@ -31,18 +31,35 @@ serve(async (req) => {
       .replace(/\//g, '_')
       .replace(/=/g, '');
 
-    // Store code verifier in session (we'll use a simple map for now)
+    // Store code verifier in session
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Store verifier temporarily in logs table
-    await supabase.from('logs').insert({
+    // Delete any existing verifiers for this user first to avoid conflicts
+    await supabase
+      .from('logs')
+      .delete()
+      .eq('user_id', userId)
+      .eq('type', 'oauth_verifier');
+
+    // Generate a unique trace ID for this auth attempt
+    const traceId = crypto.randomUUID();
+    
+    // Store new verifier with trace ID
+    const { error: insertError } = await supabase.from('logs').insert({
       user_id: userId,
       type: 'oauth_verifier',
-      payload: { code_verifier: codeVerifier },
-      trace_id: crypto.randomUUID(),
+      payload: { code_verifier: codeVerifier, trace_id: traceId },
+      trace_id: traceId,
     });
+    
+    if (insertError) {
+      console.error('Failed to store code verifier:', insertError);
+      throw new Error('Failed to initiate OAuth flow');
+    }
+    
+    console.log(`[${traceId}] Stored code verifier for user ${userId}`);
 
     const scopes = [
       'https://www.googleapis.com/auth/userinfo.email',
