@@ -25,19 +25,31 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Retrieve code verifier
-    const { data: logs } = await supabase
+    // Retrieve code verifier - get the most recent one for this user
+    const { data: logs, error: logsError } = await supabase
       .from('logs')
-      .select('payload')
+      .select('payload, created_at, trace_id')
       .eq('user_id', userId)
       .eq('type', 'oauth_verifier')
       .order('created_at', { ascending: false })
       .limit(1);
 
-    const codeVerifier = logs?.[0]?.payload?.code_verifier;
-    if (!codeVerifier) {
-      throw new Error('Code verifier not found');
+    console.log(`Found ${logs?.length || 0} verifier(s) for user ${userId}`);
+
+    if (logsError) {
+      console.error('Error fetching code verifier:', logsError);
+      throw new Error('Failed to retrieve authorization data');
     }
+
+    const codeVerifier = logs?.[0]?.payload?.code_verifier;
+    const verifierTraceId = logs?.[0]?.trace_id || 'unknown';
+    
+    if (!codeVerifier) {
+      console.error(`No code verifier found for user ${userId}`);
+      throw new Error('Authorization session expired. Please try connecting again.');
+    }
+    
+    console.log(`[${verifierTraceId}] Using code verifier for token exchange`);
 
     // Exchange code for tokens
     const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
