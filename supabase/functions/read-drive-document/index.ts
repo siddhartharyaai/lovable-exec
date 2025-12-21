@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function getAccessToken(supabase: any, userId: string) {
+async function getAccessToken(supabase: any, userId: string, traceId?: string) {
   const { data: tokenData, error } = await supabase
     .from('oauth_tokens')
     .select('*')
@@ -15,19 +15,41 @@ async function getAccessToken(supabase: any, userId: string) {
     .single();
 
   if (error || !tokenData) {
-    throw new Error('Google account not connected');
+    throw new Error('Google account not connected. Please connect your Google account in Settings.');
   }
 
   const expiresAt = new Date(tokenData.expires_at);
   if (expiresAt <= new Date()) {
+    console.log(`[${traceId}] Token expired, attempting refresh...`);
+    
     const refreshResult = await supabase.functions.invoke('refresh-google-token', {
       body: { userId }
     });
     
-    if (refreshResult.error || !refreshResult.data?.access_token) {
-      throw new Error('Failed to refresh token');
+    // Check for specific error messages from refresh function
+    if (refreshResult.error) {
+      console.error(`[${traceId}] Token refresh error:`, refreshResult.error);
+      throw new Error('Failed to refresh Google token. Please reconnect your Google account in Settings.');
     }
     
+    // Check if there's an error in the response data (happens when function returns 500)
+    if (refreshResult.data?.error) {
+      const errorMsg = refreshResult.data.error;
+      console.error(`[${traceId}] Token refresh returned error:`, errorMsg);
+      
+      // Pass through the specific revoked message
+      if (errorMsg.includes('revoked') || errorMsg.includes('reconnect')) {
+        throw new Error(errorMsg);
+      }
+      throw new Error('Google authentication expired. Please reconnect your Google account in Settings.');
+    }
+    
+    if (!refreshResult.data?.access_token) {
+      console.error(`[${traceId}] No access_token in refresh result`);
+      throw new Error('Failed to refresh Google token. Please reconnect your Google account in Settings.');
+    }
+    
+    console.log(`[${traceId}] Token refreshed successfully`);
     return refreshResult.data.access_token;
   }
 
@@ -49,7 +71,7 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const accessToken = await getAccessToken(supabase, userId);
+    const accessToken = await getAccessToken(supabase, userId, traceId);
 
     // Export Google Doc/Sheet to text format
     let exportUrl = '';
