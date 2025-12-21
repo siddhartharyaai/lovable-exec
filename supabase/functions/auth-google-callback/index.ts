@@ -24,6 +24,7 @@ serve(async (req) => {
   let redirectUrlFromState: string | null = null;
   let userIdFromState: string | null = null;
   let attemptIdFromState: string | null = null;
+  let supabase: any = null;
 
   try {
     const url = new URL(req.url);
@@ -52,11 +53,36 @@ serve(async (req) => {
       });
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    supabase = createClient(supabaseUrl, supabaseKey);
+
+    const logStage = async (stage: string, extra: Record<string, unknown> = {}) => {
+      try {
+        await supabase.from('logs').insert({
+          user_id: userIdFromState,
+          type: 'oauth_google_flow',
+          trace_id: attemptIdFromState,
+          payload: { stage, ...extra },
+        });
+      } catch {
+        // Best-effort diagnostics only
+      }
+    };
+
+    await logStage('state_parsed', { has_code: !!code, has_oauth_error: !!oauthError });
+
     if (oauthError) {
+      await logStage('oauth_error', {
+        oauth_error: oauthError,
+        oauth_error_description: oauthErrorDescription || null,
+      });
+
       const location = buildRedirectUrl(redirectUrlFromState, {
         oauth_error: 'google',
         reason: oauthError,
         description: oauthErrorDescription || oauthError,
+        attemptId: attemptIdFromState,
       });
 
       return new Response(null, {
@@ -66,10 +92,13 @@ serve(async (req) => {
     }
 
     if (!code) {
+      await logStage('missing_code');
+
       const location = buildRedirectUrl(redirectUrlFromState, {
         oauth_error: 'google',
         reason: 'missing_code',
         description: 'Missing authorization code',
+        attemptId: attemptIdFromState,
       });
 
       return new Response(null, {
@@ -77,10 +106,6 @@ serve(async (req) => {
         headers: { Location: location },
       });
     }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Retrieve the exact verifier for this attempt
     const { data: verifierRow, error: verifierErr } = await supabase
@@ -99,11 +124,13 @@ serve(async (req) => {
     const codeVerifier = (verifierRow as any)?.payload?.code_verifier;
 
     if (!codeVerifier) {
+      await logStage('verifier_missing');
       console.error(`[${attemptIdFromState}] Code verifier missing for this attempt`);
       const location = buildRedirectUrl(redirectUrlFromState, {
         oauth_error: 'google',
         reason: 'verifier_missing',
         description: 'Authorization session expired. Please try connecting again.',
+        attemptId: attemptIdFromState,
       });
 
       return new Response(null, {
@@ -112,6 +139,7 @@ serve(async (req) => {
       });
     }
 
+    await logStage('token_exchange_start');
     console.log(`[${attemptIdFromState}] Exchanging code for tokens...`);
 
     // Exchange code for tokens
@@ -134,12 +162,27 @@ serve(async (req) => {
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
+      await logStage('token_exchange_failed', {
+        status: tokenResponse.status,
+        error: errorText.slice(0, 500),
+      });
+
       console.error(`[${attemptIdFromState}] Token exchange error:`, errorText);
+
+      let userFacingDescription = 'Token exchange failed';
+      try {
+        const parsed = JSON.parse(errorText);
+        const googleDesc = (parsed?.error_description as string | undefined) || (parsed?.error as string | undefined);
+        if (googleDesc) userFacingDescription = googleDesc;
+      } catch {
+        // ignore
+      }
 
       const location = buildRedirectUrl(redirectUrlFromState, {
         oauth_error: 'google',
         reason: 'token_exchange_failed',
-        description: errorText.includes('Invalid code verifier') ? 'Invalid code verifier' : 'Token exchange failed',
+        description: userFacingDescription,
+        attemptId: attemptIdFromState,
       });
 
       return new Response(null, {
@@ -147,6 +190,8 @@ serve(async (req) => {
         headers: { Location: location },
       });
     }
+
+    await logStage('token_exchange_ok');
 
     const tokens = await tokenResponse.json();
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
@@ -187,9 +232,12 @@ serve(async (req) => {
       );
 
     if (upsertError) {
+      await logStage('token_store_failed', { message: upsertError.message });
       console.error(`[${attemptIdFromState}] Token storage error:`, upsertError);
       throw new Error('Failed to store tokens');
     }
+
+    await logStage('token_store_ok');
 
     // Clean up only this attempt's verifier
     await supabase
@@ -197,7 +245,10 @@ serve(async (req) => {
       .delete()
       .eq('id', (verifierRow as any)?.id);
 
-    const successRedirect = buildRedirectUrl(redirectUrlFromState, { connected: 'google' });
+    const successRedirect = buildRedirectUrl(redirectUrlFromState, {
+      connected: 'google',
+      attemptId: attemptIdFromState,
+    });
     return new Response(null, {
       status: 302,
       headers: { Location: successRedirect },
@@ -205,6 +256,34 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in auth-google-callback:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Best-effort: persist failure diagnostic
+    if (supabase && attemptIdFromState && userIdFromState) {
+      try {
+        await supabase.from('logs').insert({
+          user_id: userIdFromState,
+          type: 'oauth_google_flow',
+          trace_id: attemptIdFromState,
+          payload: { stage: 'callback_failed', error: errorMessage },
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    if (redirectUrlFromState && attemptIdFromState) {
+      const location = buildRedirectUrl(redirectUrlFromState, {
+        oauth_error: 'google',
+        reason: 'callback_failed',
+        description: errorMessage,
+        attemptId: attemptIdFromState,
+      });
+
+      return new Response(null, {
+        status: 302,
+        headers: { Location: location },
+      });
+    }
 
     if (redirectUrlFromState) {
       const location = buildRedirectUrl(redirectUrlFromState, {
