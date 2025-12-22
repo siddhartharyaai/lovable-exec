@@ -43,6 +43,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [googleTokenRevoked, setGoogleTokenRevoked] = useState(false);
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
   const [recentMessages, setRecentMessages] = useState<Message[]>([]);
   const [upcomingReminders, setUpcomingReminders] = useState<Reminder[]>([]);
@@ -100,12 +101,26 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('oauth_tokens')
-        .select('id')
+        .select('id, expires_at')
         .eq('user_id', legacyUserId)
         .eq('provider', 'google')
         .maybeSingle();
       
-      setIsGoogleConnected(!!data && !error);
+      if (!data || error) {
+        setIsGoogleConnected(false);
+        // Check if token was recently deleted (revoked)
+        const { count } = await supabase
+          .from('logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', legacyUserId)
+          .eq('type', 'oauth_token_revoked')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+        
+        setGoogleTokenRevoked((count || 0) > 0);
+      } else {
+        setIsGoogleConnected(true);
+        setGoogleTokenRevoked(false);
+      }
     } catch (err) {
       console.error('Error checking connections:', err);
       setIsGoogleConnected(false);
@@ -120,39 +135,40 @@ const Dashboard = () => {
     try {
       setIsLoadingData(true);
 
-      const { data: messages, error: msgError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('user_id', legacyUserId)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Parallelize all queries for better performance
+      const [messagesResult, remindersResult, logsResult] = await Promise.all([
+        supabase
+          .from('messages')
+          .select('*')
+          .eq('user_id', legacyUserId)
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('reminders')
+          .select('*')
+          .eq('user_id', legacyUserId)
+          .eq('status', 'pending')
+          .gte('due_ts', new Date().toISOString())
+          .order('due_ts', { ascending: true })
+          .limit(5),
+        supabase
+          .from('logs')
+          .select('*')
+          .eq('user_id', legacyUserId)
+          .order('created_at', { ascending: false })
+          .limit(20)
+      ]);
 
-      if (!msgError && messages) {
-        setRecentMessages(messages);
+      if (!messagesResult.error && messagesResult.data) {
+        setRecentMessages(messagesResult.data);
       }
 
-      const { data: reminders, error: remError } = await supabase
-        .from('reminders')
-        .select('*')
-        .eq('user_id', legacyUserId)
-        .eq('status', 'pending')
-        .gte('due_ts', new Date().toISOString())
-        .order('due_ts', { ascending: true })
-        .limit(5);
-
-      if (!remError && reminders) {
-        setUpcomingReminders(reminders);
+      if (!remindersResult.error && remindersResult.data) {
+        setUpcomingReminders(remindersResult.data);
       }
 
-      const { data: logs, error: logsError } = await supabase
-        .from('logs')
-        .select('*')
-        .eq('user_id', legacyUserId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!logsError && logs) {
-        setRecentActivities(logs);
+      if (!logsResult.error && logsResult.data) {
+        setRecentActivities(logsResult.data);
       }
 
     } catch (err) {
@@ -263,12 +279,14 @@ const Dashboard = () => {
               value={totalInteractions}
               icon={MessageSquare}
               trend={12}
+              isLoading={isLoadingData}
             />
             <StatsCard
               title="Reminders Set"
               value={remindersCompleted}
               icon={CheckCircle}
               trend={8}
+              isLoading={isLoadingData}
             />
             <StatsCard
               title="Hours Saved"
@@ -276,11 +294,13 @@ const Dashboard = () => {
               icon={Clock}
               trend={15}
               suffix="h"
+              isLoading={isLoadingData}
             />
             <StatsCard
               title="Email Drafts"
               value={emailDraftsCreated}
               icon={TrendingUp}
+              isLoading={isLoadingData}
             />
           </div>
         </FadeInView>
@@ -357,6 +377,7 @@ const Dashboard = () => {
               isLoading={isLoadingConnections}
               onRefresh={checkConnections}
               phoneNumber={profile?.phone}
+              googleTokenRevoked={googleTokenRevoked}
             />
             
             <EnhancedRemindersCard

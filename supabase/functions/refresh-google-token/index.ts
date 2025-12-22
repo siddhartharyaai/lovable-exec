@@ -59,9 +59,15 @@ serve(async (req) => {
           const errorText = await tokenResponse.text();
           console.error(`Token refresh attempt ${attempt}/${maxRetries} failed:`, errorText);
           
-          // Check if token is permanently revoked
+          // Check if token is permanently revoked - delete stale token and throw
           if (errorText.includes('invalid_grant') || errorText.includes('Token has been revoked')) {
-            throw new Error('Google OAuth token has been revoked. Please reconnect your Google account in Settings.');
+            console.log(`Token revoked for user ${userId}, deleting stale oauth_token row`);
+            await supabase
+              .from('oauth_tokens')
+              .delete()
+              .eq('user_id', userId)
+              .eq('provider', 'google');
+            throw new Error('GOOGLE_TOKEN_REVOKED');
           }
           
           lastError = new Error(`Token refresh failed: ${errorText}`);

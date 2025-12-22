@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, XCircle, RefreshCw, MessageSquare, Mail } from 'lucide-react';
+import { CheckCircle2, XCircle, RefreshCw, MessageSquare, Mail, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useNavigate } from 'react-router-dom';
 
 interface ConnectionHealthProps {
   isGoogleConnected: boolean;
@@ -11,6 +12,7 @@ interface ConnectionHealthProps {
   onRefresh: () => void;
   phoneNumber?: string;
   lastSyncTime?: string;
+  googleTokenRevoked?: boolean;
 }
 
 export const ConnectionHealth = ({ 
@@ -18,8 +20,10 @@ export const ConnectionHealth = ({
   isLoading, 
   onRefresh,
   phoneNumber,
-  lastSyncTime 
+  lastSyncTime,
+  googleTokenRevoked = false
 }: ConnectionHealthProps) => {
+  const navigate = useNavigate();
   const isWhatsAppConnected = Boolean(phoneNumber);
   const healthScore = (isGoogleConnected ? 50 : 0) + (isWhatsAppConnected ? 50 : 0);
   
@@ -79,19 +83,31 @@ export const ConnectionHealth = ({
                 )}
               </div>
 
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className={`flex items-center justify-between p-3 rounded-lg ${googleTokenRevoked ? 'bg-destructive/10 border border-destructive/30' : 'bg-muted/50'}`}>
                 <div className="flex items-center gap-3">
-                  <Mail className={`w-5 h-5 ${isGoogleConnected ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <Mail className={`w-5 h-5 ${isGoogleConnected ? 'text-primary' : googleTokenRevoked ? 'text-destructive' : 'text-muted-foreground'}`} />
                   <div>
                     <p className="text-sm font-medium">Google Workspace</p>
                     <p className="text-xs text-muted-foreground">
-                      {isGoogleConnected 
-                        ? (lastSyncTime ? `Last synced ${lastSyncTime}` : 'Connected') 
-                        : 'Not connected'}
+                      {googleTokenRevoked 
+                        ? 'Token expired - reconnect required'
+                        : isGoogleConnected 
+                          ? (lastSyncTime ? `Last synced ${lastSyncTime}` : 'Connected') 
+                          : 'Not connected'}
                     </p>
                   </div>
                 </div>
-                {isGoogleConnected ? (
+                {googleTokenRevoked ? (
+                  <Button 
+                    size="sm" 
+                    variant="destructive"
+                    onClick={() => navigate('/settings')}
+                    className="shrink-0"
+                  >
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                    Reconnect
+                  </Button>
+                ) : isGoogleConnected ? (
                   <Badge variant="secondary" className="bg-success/10 text-success">
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     Connected
