@@ -109,8 +109,9 @@ export const EnhancedMessagesCard = ({ messages, isLoading }: EnhancedMessagesCa
             <EmptyState
               icon={MessageSquare}
               title="No messages yet"
-              description="Start a conversation with Man Friday on WhatsApp to see your messages here."
-              actionLabel="Learn How"
+              description="Start a conversation with Man Friday on WhatsApp to see your messages here. Save +1 (415) 523-8886 and say 'Hi'!"
+              actionLabel="Open WhatsApp"
+              onAction={() => window.open('https://wa.me/14155238886?text=Hi', '_blank')}
             />
           ) : (
             <Tabs defaultValue="all" className="w-full">

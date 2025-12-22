@@ -56,8 +56,9 @@ export const EnhancedRemindersCard = ({ reminders, isLoading }: EnhancedReminder
             <EmptyState
               icon={AlarmCheck}
               title="No reminders set"
-              description="Create a reminder by asking Man Friday on WhatsApp. Just say 'Remind me to...'"
-              actionLabel="Learn More"
+              description="Create a reminder via WhatsApp. Just say 'Remind me to call John at 5pm tomorrow'."
+              actionLabel="Create Reminder"
+              onAction={() => window.open('https://wa.me/14155238886?text=Remind%20me%20to%20check%20my%20email%20in%201%20hour', '_blank')}
             />
           ) : (
             <div className="space-y-3 max-h-96 overflow-y-auto">

@@ -75,17 +75,34 @@ const Onboarding = () => {
       if (error) throw error;
 
       // Also update the legacy users table for backward compatibility with WhatsApp webhook
-      await supabase
+      // First check if user already exists by phone
+      const { data: existingUser } = await supabase
         .from('users')
-        .upsert(
-          { 
+        .select('id, auth_user_id, name')
+        .eq('phone', phoneNumber)
+        .maybeSingle();
+
+      if (existingUser) {
+        // Update existing row - ensure auth_user_id is set
+        await supabase
+          .from('users')
+          .update({ 
+            name: profile?.name || existingUser.name || null,
+            auth_user_id: user.id, // Always ensure this is set
+            updated_at: new Date().toISOString() 
+          })
+          .eq('id', existingUser.id);
+      } else {
+        // Insert new row
+        await supabase
+          .from('users')
+          .insert({ 
             phone: phoneNumber, 
             name: profile?.name || null,
             auth_user_id: user.id,
             updated_at: new Date().toISOString() 
-          },
-          { onConflict: 'phone' }
-        );
+          });
+      }
 
       await refreshProfile();
       
